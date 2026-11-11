@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>AMD Mobile Trader</title>
+<style>
+:root{color-scheme:dark;--bg:#09111e;--panel:#121e30;--line:#293b55;--muted:#9aabc1;--txt:#f2f6ff;--green:#38d6a0;--red:#ff7180;--blue:#79adff;--amber:#f2c36b}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:15px system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:600px;margin:auto;padding:16px 13px 38px}.top{display:flex;justify-content:space-between;align-items:center;margin:5px 0 16px}
+h1{font-size:22px;margin:0}.sub,.muted,.note{color:var(--muted)}.sub{font-size:12px;margin-top:3px}
+.pill{font-size:11px;padding:6px 9px;border-radius:20px;border:1px solid #385476;color:#b8d4ff}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:15px;padding:14px;margin:11px 0}
+.label{font-size:12px;color:var(--muted)}.balance{font-size:34px;font-weight:800;letter-spacing:-1px;margin:4px 0 10px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.metric{padding:11px;border-radius:11px;background:#0b1728;border:1px solid var(--line)}.metric strong{display:block;font-size:19px;margin-top:4px}
+.tabs{display:flex;gap:4px;background:#0a1627;border-radius:11px;padding:4px}.tabs button{flex:1;border:0;border-radius:8px;padding:10px;background:transparent;color:var(--muted);font-weight:700}.tabs button.active{background:#294263;color:white}
+select,input{width:100%;background:#0a1627;color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:6px;font:inherit}
+button{font:inherit;cursor:pointer}.primary,.secondary{width:100%;border-radius:11px;padding:13px;margin-top:9px;font-weight:750}.primary{border:0;background:var(--green);color:#071a17}.secondary{border:1px solid var(--line);background:#18263c;color:white}
+.primary:disabled,.secondary:disabled{opacity:.45;cursor:not-allowed}
+.status{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted);margin-top:9px}.dot{width:8px;height:8px;border-radius:50%;background:var(--amber)}.dot.ok{background:var(--green)}.dot.bad{background:var(--red)}
+.price{font-size:25px;font-weight:800;margin:4px 0}.up{color:var(--green)}.down{color:var(--red)}
+.note{font-size:12px;line-height:1.5;margin:9px 0 0}.warn{border-color:#66522e;background:#241f14}.warn .note{color:#f1d8a7}
+.log{font:12px ui-monospace,monospace;white-space:pre-wrap;line-height:1.5;max-height:190px;overflow:auto;color:#c0d0e5}
+.chart{width:100%;height:110px;background:#0a1627;border:1px solid var(--line);border-radius:10px;margin-top:9px}
+.small{font-size:11px;color:var(--muted)}.row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+</style></head>
+<body><main>
+<div class="top"><div><h1>AMD Mobile Trader</h1><div class="sub">Deriv live prices • Synthetic + Forex • Paper trading</div></div><span class="pill">LIVE FEED / DEMO</span></div>
+
+<section class="card">
+ <div class="row"><span class="label">PAPER ACCOUNT BALANCE</span><span class="pill" id="modeBadge">DEMO SIMULATION</span></div>
+ <div class="balance" id="balance">$5.00</div>
+ <div class="grid">
+  <div class="metric"><div class="label">Session P/L</div><strong id="pnl">$0.00</strong></div>
+  <div class="metric"><div class="label">Closed paper trades</div><strong id="tradeCount">0</strong></div>
+ </div>
+ <p class="note">Your $5 demo balance is simulated in this page. It is separate from your Deriv account balance.</p>
+</section>
+
+<section class="card">
+ <div class="tabs"><button id="demoTab" class="active">Demo $5</button><button id="liveTab">Live $10 🔒</button></div>
+ <p class="note" id="modeNote">Paper-trading mode. No orders are sent to Deriv.</p>
+</section>
+
+<section class="card">
+ <div class="label">MARKET DATA CONNECTION</div>
+ <label class="small" for="appId">Deriv app ID (required for the official public WebSocket feed)</label>
+ <input id="appId" inputmode="numeric" placeholder="Enter your Deriv application ID">
+ <button class="primary" id="connect">Connect live prices</button>
+ <div class="status"><span class="dot" id="connDot"></span><span id="connText">Not connected</span></div>
+ <p class="note">This module requests public tick data only. No API token or account authorization is needed for this price-feed test.</p>
+</section>
+
+<section class="card">
+ <div class="label">MARKET SELECTOR</div>
+ <select id="market">
+  <option value="R_10">Synthetic • Volatility 10 Index</option>
+  <option value="R_25">Synthetic • Volatility 25 Index</option>
+  <option value="R_50">Synthetic • Volatility 50 Index</option>
+  <option value="R_75">Synthetic • Volatility 75 Index</option>
+  <option value="R_100">Synthetic • Volatility 100 Index</option>
+  <option value="frxEURUSD">Forex • EUR/USD</option>
+  <option value="frxGBPUSD">Forex • GBP/USD</option>
+  <option value="frxUSDJPY">Forex • USD/JPY</option>
+  <option value="frxAUDUSD">Forex • AUD/USD</option>
+ </select>
+ <div class="row" style="margin-top:13px"><div><div class="label">LATEST PRICE</div><div class="price" id="price">—</div></div><div style="text-align:right"><div class="label">TICK CHANGE</div><strong id="tickChange">—</strong></div></div>
+ <div class="small" id="lastTick">Waiting for live tick data</div>
+ <canvas class="chart" id="chart" width="560" height="110"></canvas>
+ <div class="row" style="margin-top:10px"><button class="secondary" id="subscribe" style="flex:1">Subscribe selected market</button><button class="secondary" id="disconnect" style="flex:1">Disconnect</button></div>
+</section>
+
+<section class="card">
+ <div class="label">PAPER TEST ENGINE</div>
+ <div class="grid">
+  <div class="metric"><div class="label">Stake per test</div><strong>$0.10</strong></div>
+  <div class="metric"><div class="label">Demo loss stop</div><strong>$1.00</strong></div>
+ </div>
+ <button class="primary" id="paperStart" disabled>Start paper monitor</button>
+ <button class="secondary" id="paperStop" disabled>Stop paper monitor</button>
+ <p class="note">The monitor records live prices and a simple illustrative signal. It does not place contracts or promise a profitable strategy. Paper P/L is not a forecast of real Deriv payouts.</p>
+</section>
+
+<section class="card">
+ <div class="label">TEST CHECKLIST</div>
+ <div class="small" id="checkFeed">○ Live feed connected</div>
+ <div class="small" id="checkTicks" style="margin-top:6px">○ Receiving multiple ticks</div>
+ <div class="small" id="checkPaper" style="margin-top:6px">○ Paper monitor tested</div>
+ <div class="small" id="checkLive" style="margin-top:6px">🔒 Live trading disabled</div>
+</section>
+
+<section class="card"><div class="label">ACTIVITY LOG</div><div class="log" id="log">Ready. Enter your Deriv app ID to request live public prices.</div></section>
+<section class="card warn"><strong>Live trading is locked.</strong><p class="note">Live mode remains display-only at $10. This prototype has no trade-placement code. Before any live execution, we must validate the official API flow, contract specifications, minimum stake, order responses, reconnect behavior and loss limits. Do not paste an API token into this page.</p></section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+let ws=null,req=0,subId=null,active=false,paper=false,mode='demo',balance=5,startBalance=5,prices=[],ticks=0,previous=null,paperTrades=0;
+function log(s){$('log').textContent=new Date().toLocaleTimeString()+'  '+s+'\\n'+$('log').textContent}
+function setConn(ok,msg){$('connDot').className='dot '+(ok?'ok':'bad');$('connText').textContent=msg;$('checkFeed').textContent=(ok?'✓':'○')+' Live feed connected';$('paperStart').disabled=!ok||mode!=='demo';}
+function render(){ $('balance').textContent='$'+balance.toFixed(2);let p=balance-startBalance;$('pnl').textContent=(p>=0?'+':'')+'$'+p.toFixed(2);$('pnl').className=p>=0?'up':'down';$('tradeCount').textContent=paperTrades;$('demoTab').classList.toggle('active',mode==='demo');$('liveTab').classList.toggle('active',mode==='live');$('modeBadge').textContent=mode==='demo'?'DEMO SIMULATION':'LIVE LOCKED';$('modeNote').textContent=mode==='demo'?'Paper-trading mode. No orders are sent to Deriv.':'Live balance target: $10. Real trading is disabled.';$('paperStart').disabled=!ws||mode!=='demo'||paper;}
+function draw(){let c=$('chart'),ctx=c.getContext('2d'),w=c.width,h=c.height;ctx.clearRect(0,0,w,h);ctx.strokeStyle='#263b56';ctx.beginPath();ctx.moveTo(0,h/2);ctx.lineTo(w,h/2);ctx.stroke();if(prices.length<2)return;let min=Math.min(...prices),max=Math.max(...prices),range=max-min||1;ctx.strokeStyle='#43d6a5';ctx.lineWidth=2;ctx.beginPath();prices.forEach((p,i)=>{let x=i/(prices.length-1)*w,y=h-8-(p-min)/range*(h-16);i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();}
+function send(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o))}
+function unsubscribe(){if(subId)send({forget:subId});subId=null}
+function subscribe(){if(!ws||ws.readyState!==1)return;unsubscribe();ticks=0;previous=null;prices=[];$('price').textContent='—';$('tickChange').textContent='—';send({ticks:$('market').value,subscribe:1,req_id:++req});log('Requested '+$('market').value+' tick stream.')}
+function connect(){let id=$('appId').value.trim();if(!/^\d+$/.test(id)){log('Please enter a numeric Deriv app ID.');return}disconnect();let url='wss://ws.derivws.com/websockets/v3?app_id='+encodeURIComponent(id);try{ws=new WebSocket(url)}catch(e){setConn(false,'Could not create WebSocket');log('Connection error: '+e.message);return}setConn(false,'Connecting to Deriv…');ws.onopen=()=>{setConn(true,'Connected to Deriv public feed');log('WebSocket connected. Requesting selected market.');subscribe()};ws.onmessage=e=>{let d;try{d=JSON.parse(e.data)}catch{return}if(d.error){log('Deriv error: '+d.error.message);return}if(d.msg_type==='tick'&&d.tick){let p=Number(d.tick.quote);if(!Number.isFinite(p))return;ticks++;previous=prices.length?prices[prices.length-1]:p;prices.push(p);if(prices.length>80)prices.shift();$('price').textContent=p.toFixed(d.tick.pip_size??5);let delta=p-previous;$('tickChange').textContent=(delta>=0?'+':'')+delta.toFixed(d.tick.pip_size??5);$('tickChange').className=delta>=0?'up':'down';$('lastTick').textContent='Last tick: '+new Date().toLocaleTimeString()+' • '+ticks+' ticks received';$('checkTicks').textContent='✓ Receiving multiple ticks ('+ticks+')';draw();if(paper)paperTick(p)}if(d.subscription&&d.subscription.id)subId=d.subscription.id};
+ws.onerror=()=>{setConn(false,'WebSocket error');log('WebSocket error. Check connection and app ID.')};ws.onclose=()=>{setConn(false,'Disconnected');log('WebSocket closed.')}} 
+function disconnect(){if(ws){unsubscribe();ws.onclose=null;ws.close();ws=null}setConn(false,'Not connected');}
+function paperTick(p){if(!window.lastPaperPrice){window.lastPaperPrice=p;return}let old=window.lastPaperPrice;window.lastPaperPrice=p;let diff=p-old;if(Math.abs(diff)<1e-12)return;let gain=diff>0?.01:-.01;balance=Math.max(0,balance+gain);paperTrades++;render();$('checkPaper').textContent='✓ Paper monitor has processed ticks';if(balance<=4){stopPaper();log('Paper loss limit reached; monitor stopped.')} }
+function startPaper(){if(!ws||mode!=='demo'||paper)return;paper=true;window.lastPaperPrice=Number($('price').textContent);$('paperStart').disabled=true;$('paperStop').disabled=false;log('Paper monitor started. Illustrative tick-direction scoring only; no orders placed.')}
+function stopPaper(){paper=false;$('paperStart').disabled=!ws||mode!=='demo';$('paperStop').disabled=true;log('Paper monitor stopped.')}
+$('connect').onclick=connect;$('subscribe').onclick=subscribe;$('disconnect').onclick=()=>{stopPaper();disconnect()};$('market').onchange=()=>{if(ws&&ws.readyState===1)subscribe()};$('paperStart').onclick=startPaper;$('paperStop').onclick=stopPaper;
+$('demoTab').onclick=()=>{stopPaper();mode='demo';balance=5;startBalance=5;paperTrades=0;render();log('Paper balance reset to $5.00.')};
+$('liveTab').onclick=()=>{stopPaper();mode='live';balance=10;startBalance=10;render();log('Live display selected. Live execution remains locked.')};
+window.addEventListener('beforeunload',disconnect);render();
+</script></body></html>
