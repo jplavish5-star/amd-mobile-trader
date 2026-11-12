@@ -27,7 +27,7 @@
 <input id="realToken" type="password" placeholder="Paste your real token" autocomplete="off">
 <p class="muted">Tokens stay in this page's memory only and are not saved to browser storage. Use separate Deriv tokens with trading permission for each account.</p>
 <button class="blue full" id="connectBtn" onclick="connect()">CONNECT SELECTED ACCOUNT</button>
-<div id="balance">Balance: --</div><div class="card"><h3>Trading Results</h3><div class="dash-grid"><div class="metric"><span>CURRENT BALANCE</span><strong id="currentBalance">--</strong></div><div class="metric"><span>INITIAL BALANCE</span><strong id="initialBalance">--</strong></div><div class="metric"><span>SESSION PROFIT / LOSS</span><strong id="sessionPL">0.00</strong></div><div class="metric"><span>WIN RATE</span><strong id="winRate">0%</strong></div><div class="metric"><span>WINS</span><strong id="winsCount">0</strong></div><div class="metric"><span>LOSSES</span><strong id="lossesCount">0</strong></div><div class="metric"><span>COMPLETED TRADES</span><strong id="tradesCount">0</strong></div></div><p id="dashboardStatus" class="muted">Connect your account to view results.</p></div>
+<div id="balance">Deriv account balance: --</div><label for="virtualStart">Virtual starting balance for testing</label><select id="virtualStart"><option value="10" selected>$10 virtual balance</option><option value="15">$15 virtual balance</option></select><p class="muted">This is a simulator setting only. Your Deriv DEMO account may still show $10,000; no funds are added or changed.</p><div class="card"><h3>Trading Results · Virtual Test</h3><div class="dash-grid"><div class="metric"><span>SIMULATED BALANCE</span><strong id="currentBalance">--</strong></div><div class="metric"><span>VIRTUAL START</span><strong id="initialBalance">--</strong></div><div class="metric"><span>SESSION PROFIT / LOSS</span><strong id="sessionPL">0.00</strong></div><div class="metric"><span>WIN RATE</span><strong id="winRate">0%</strong></div><div class="metric"><span>WINS</span><strong id="winsCount">0</strong></div><div class="metric"><span>LOSSES</span><strong id="lossesCount">0</strong></div><div class="metric"><span>COMPLETED TRADES</span><strong id="tradesCount">0</strong></div></div><p id="dashboardStatus" class="muted">Connect your account to view results.</p></div>
 </div>
 <div class="card">
 <div id="price">--<small id="symName">Waiting for market data</small></div>
@@ -47,7 +47,7 @@
 <div class="card"><div id="log">Activity log\nWaiting for connection…</div></div>
 <script>
 let ws=null, mode='demo', authorized=false, currency='USD', tickSubId=null, contractSubs=new Set(), pendingProposal=null;
-let autoRunning=false,tradeInProgress=false,activeContractId=null,priceHistory=[],autoCooldown=0,sessionStartBalance=null,currentBalance=null,sessionPL=0,wins=0,losses=0,consecutiveLosses=0,settledContractIds=new Set();
+let autoRunning=false,tradeInProgress=false,activeContractId=null,priceHistory=[],autoCooldown=0,sessionStartBalance=null,currentBalance=null,accountBalance=null,sessionPL=0,wins=0,losses=0,consecutiveLosses=0,settledContractIds=new Set();
 const $=id=>document.getElementById(id);
 function log(message){const el=$('log');el.textContent+='\n'+new Date().toLocaleTimeString()+'  '+message;el.scrollTop=el.scrollHeight;}
 function status(message,color='#252a33'){$('status').textContent=message;$('status').style.background=color;}
@@ -58,7 +58,7 @@ function setMode(next){
  if(next==='real'&&!confirm('Switch to REAL MONEY mode? Trades can lose real funds. Continue?'))return;
  disconnect(false);mode=next;
  $('demoMode').classList.toggle('selected',mode==='demo');$('realMode').classList.toggle('selected',mode==='real');
- $('realWarning').hidden=mode!=='real';$('balance').textContent='Balance: --';
+ $('realWarning').hidden=mode!=='real';$('balance').textContent='Deriv account balance: --';
  $('tradeStatus').textContent=mode==='demo'?'Demo mode selected. Connect your Demo token to trade virtual funds.':'Real mode selected. Connect your Real token only when you are ready to risk real funds.';
  log('Mode changed to '+mode.toUpperCase()+'. Reconnect to authorize this account.');
 }
@@ -66,6 +66,7 @@ function disconnect(showLog=true){
  autoRunning=false;tradeInProgress=false;activeContractId=null;updateAutoUI();
  if(ws){const old=ws;ws=null;old.onclose=null;try{old.close();}catch(e){}}
  authorized=false;tickSubId=null;contractSubs.clear();setTradeEnabled(false);
+ $('virtualStart').disabled=false;
  if(showLog)log('Disconnected.');
 }
 async function connect(){
@@ -74,7 +75,7 @@ async function connect(){
  if(!token){alert('Enter the API token for the selected '+mode.toUpperCase()+' account.');return;}
  if(mode==='real'&&!confirm('You are connecting a REAL account. Trades may use real money. Continue?'))return;
  disconnect(false);
- sessionStartBalance=null;currentBalance=null;sessionPL=0;wins=0;losses=0;consecutiveLosses=0;$('currentBalance').textContent='--';$('initialBalance').textContent='--';$('sessionPL').textContent='0.00';$('winsCount').textContent='0';$('lossesCount').textContent='0';$('tradesCount').textContent='0';$('winRate').textContent='0%';
+ sessionStartBalance=Number($('virtualStart').value);currentBalance=sessionStartBalance;accountBalance=null;sessionPL=0;wins=0;losses=0;consecutiveLosses=0;settledContractIds=new Set();$('virtualStart').disabled=true;$('currentBalance').textContent=currentBalance.toFixed(2)+' USD';$('initialBalance').textContent=sessionStartBalance.toFixed(2)+' USD';$('sessionPL').textContent='0.00 USD';$('winsCount').textContent='0';$('lossesCount').textContent='0';$('tradesCount').textContent='0';$('winRate').textContent='0%';
  ws=null;status('🟡 Authenticating with Deriv…','#65420e');$('balance').textContent='Balance: --';
  $('connectBtn').disabled=true;log('Requesting '+mode.toUpperCase()+' account access…');
  try{
@@ -123,7 +124,7 @@ async function connect(){
    if(data.error){const msg=data.error.message||'Unknown API error';log('Deriv API error: '+msg);$('tradeStatus').textContent=msg;if(data.msg_type==='proposal'||data.msg_type==='buy'){pendingProposal=null;tradeInProgress=false;autoCooldown=12;}return;}
    if(data.msg_type==='balance'&&data.balance){
     currency=data.balance.currency||currency;
-    currentBalance=Number(data.balance.balance);$('balance').textContent='Balance: '+currentBalance.toFixed(2)+' '+currency+' · '+(account.loginid||account.id);if(sessionStartBalance===null)sessionStartBalance=currentBalance;$('currentBalance').textContent=currentBalance.toFixed(2)+' '+currency;$('initialBalance').textContent=sessionStartBalance.toFixed(2)+' '+currency;updateAutoUI();
+    accountBalance=Number(data.balance.balance);$('balance').textContent='Deriv DEMO balance: '+accountBalance.toFixed(2)+' '+currency+' · '+(account.loginid||account.id);$('currentBalance').textContent=currentBalance.toFixed(2)+' '+currency;$('initialBalance').textContent=sessionStartBalance.toFixed(2)+' '+currency;updateAutoUI();
    }
    if(data.msg_type==='tick'&&data.tick){const quote=Number(data.tick.quote);$('price').innerHTML=quote.toLocaleString(undefined,{maximumFractionDigits:8})+'<small>'+data.tick.symbol+' · LIVE</small>';onMarketTick(quote);}
    if(data.msg_type==='proposal'&&data.proposal&&pendingProposal){
@@ -139,7 +140,7 @@ async function connect(){
    }
    if(data.msg_type==='proposal_open_contract'&&data.proposal_open_contract){
     const contract=data.proposal_open_contract;
-    if(contract.is_sold&&!settledContractIds.has(String(contract.contract_id||activeContractId))){settledContractIds.add(String(contract.contract_id||activeContractId||'unknown'));const profit=Number(contract.profit||0);sessionPL+=profit;if(Number.isFinite(Number(contract.balance))){currentBalance=Number(contract.balance);$('currentBalance').textContent=currentBalance.toFixed(2)+' '+currency;}if(profit>0){wins++;consecutiveLosses=0;}else{losses++;consecutiveLosses++;}$('sessionPL').textContent=sessionPL.toFixed(2)+' '+currency;$('winsCount').textContent=String(wins);$('lossesCount').textContent=String(losses);$('tradesCount').textContent=String(wins+losses);$('winRate').textContent=Math.round(wins/(wins+losses)*100)+'%';tradeInProgress=false;activeContractId=null;autoCooldown=12;log('RESULT: '+contract.status+' · Profit: '+profit.toFixed(2)+' '+currency+' · Payout: '+contract.payout);$('tradeStatus').textContent='Last result: '+contract.status+' · Profit: '+profit.toFixed(2)+' '+currency;updateAutoUI();if(autoRunning&&sessionStartBalance!==null&&(sessionPL<=-(sessionStartBalance*0.07)||consecutiveLosses>=2))stopAuto('Safety stop: '+(consecutiveLosses>=2?'2 consecutive losses':'7% session drawdown')+'.');}
+    if(contract.is_sold&&!settledContractIds.has(String(contract.contract_id||activeContractId))){settledContractIds.add(String(contract.contract_id||activeContractId||'unknown'));const profit=Number(contract.profit||0);sessionPL+=profit;currentBalance=sessionStartBalance+sessionPL;$('currentBalance').textContent=currentBalance.toFixed(2)+' '+currency;if(profit>0){wins++;consecutiveLosses=0;}else{losses++;consecutiveLosses++;}$('sessionPL').textContent=sessionPL.toFixed(2)+' '+currency;$('winsCount').textContent=String(wins);$('lossesCount').textContent=String(losses);$('tradesCount').textContent=String(wins+losses);$('winRate').textContent=Math.round(wins/(wins+losses)*100)+'%';tradeInProgress=false;activeContractId=null;autoCooldown=12;log('RESULT: '+contract.status+' · Profit: '+profit.toFixed(2)+' '+currency+' · Payout: '+contract.payout);$('tradeStatus').textContent='Last result: '+contract.status+' · Profit: '+profit.toFixed(2)+' '+currency;updateAutoUI();if(autoRunning&&sessionStartBalance!==null&&(sessionPL<=-(sessionStartBalance*0.07)||consecutiveLosses>=2))stopAuto('Safety stop: '+(consecutiveLosses>=2?'2 consecutive losses':'7% session drawdown')+'.');}
    }
   };
   socket.onerror=()=>{if(ws===socket){status('❌ WebSocket connection error','#641f2a');log('Secure WebSocket connection failed. Check your network and try again.');}};
@@ -177,7 +178,7 @@ function updateAutoUI(message){
 function startAuto(){
  if(mode!=='demo'){alert('Automatic scalping is locked to DEMO during testing.');return;}
  if(!authorized||!ws||ws.readyState!==1){alert('Connect your Demo account first.');return;}
- if(sessionStartBalance===null){alert('Wait for the Demo balance to appear.');return;}
+ if(sessionStartBalance===null||!Number.isFinite(sessionStartBalance)){alert('Choose a $10 or $15 virtual starting balance and reconnect.');return;}
  autoRunning=true;autoCooldown=12;priceHistory=[];updateAutoUI('AUTO ON · Collecting live ticks before first signal.');log('DEMO AUTO SCALPER STARTED · EMA 5/13 + RSI(14) · '+$('duration').value+' ticks · fixed 0.35 stake.');setTradeEnabled(true);
 }
 function stopAuto(reason){autoRunning=false;updateAutoUI(reason||'AUTO OFF · No new trades will be opened.');log(reason||'Auto scalper stopped.');setTradeEnabled(authorized);}
