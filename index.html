@@ -127,7 +127,7 @@ async function connect(){
    if(data.msg_type==='proposal'&&data.proposal&&pendingProposal){
     const trade=pendingProposal;pendingProposal=null;
     log('Quote received. Buying '+trade.direction+'…');
-    socket.send(JSON.stringify({buy:data.proposal.id,price:trade.stake}));
+    socket.send(JSON.stringify({buy:data.proposal.id,price:Number(data.proposal.ask_price||trade.stake)}));
    }
    if(data.msg_type==='buy'&&data.buy){
     log('Trade purchased. Contract ID: '+data.buy.contract_id+' · Buy price: '+data.buy.buy_price);
@@ -162,7 +162,7 @@ function requestTrade(direction){
  if(pendingProposal){alert('A trade quote is already being processed. Please wait.');return;}
  const trade={direction,stake};pendingProposal=trade;
  $('tradeStatus').textContent='Requesting a price quote…';log('Requesting '+direction+' proposal: '+stake+' '+currency+', '+duration+' ticks.');
- ws.send(JSON.stringify({proposal:1,amount:stake,basis:'stake',contract_type:direction,currency,duration,duration_unit:'t',symbol:$('symbol').value}));
+ ws.send(JSON.stringify({proposal:1,amount:stake,basis:'stake',contract_type:direction,currency,duration,duration_unit:'t',subscribe:1,underlying_symbol:$('symbol').value}));
 }
 window.addEventListener('beforeunload',()=>{if(ws)ws.close();});
 </script>
