@@ -55,6 +55,14 @@
 <script>
 let ws=null, mode='demo', authorized=false, currency='USD', tickSubId=null, contractSubs=new Set(), pendingProposal=null;
 let autoRunning=false, tradeInProgress=false, activeContractId=null, priceHistory=[], autoCooldown=0, sessionStartBalance=null, sessionPL=0, wins=0, losses=0, consecutiveLosses=0, settledContractIds=new Set();
+const riskStorageKey='amdAutoRiskState';
+function saveRiskState(){
+ try{localStorage.setItem(riskStorageKey,JSON.stringify({day:new Date().toLocaleDateString(),startBalance:sessionStartBalance,sessionPL,wins,losses,consecutiveLosses}));}catch(e){}
+}
+function restoreRiskState(){
+ try{const s=JSON.parse(localStorage.getItem(riskStorageKey)||'null');if(s&&s.day===new Date().toLocaleDateString()){sessionStartBalance=Number(s.startBalance)||null;sessionPL=Number(s.sessionPL)||0;wins=Number(s.wins)||0;losses=Number(s.losses)||0;consecutiveLosses=Number(s.consecutiveLosses)||0;}}catch(e){}
+}
+restoreRiskState();
 const $=id=>document.getElementById(id);
 function log(message){const el=$('log');el.textContent+='\n'+new Date().toLocaleTimeString()+'  '+message;el.scrollTop=el.scrollHeight;}
 function status(message,color='#252a33'){$('status').textContent=message;$('status').style.background=color;}
@@ -129,7 +137,7 @@ async function connect(){
    if(data.error){const msg=data.error.message||'Unknown API error';log('Deriv API error: '+msg);$('tradeStatus').textContent=msg;if(data.msg_type==='proposal'||data.msg_type==='buy'){pendingProposal=null;tradeInProgress=false;autoCooldown=12;}return;}
    if(data.msg_type==='balance'&&data.balance){
     currency=data.balance.currency||currency;
-    $('balance').textContent='Balance: '+data.balance.balance+' '+currency+' · '+(account.loginid||account.id);if(sessionStartBalance===null)sessionStartBalance=Number(data.balance.balance);updateAutoUI();
+    $('balance').textContent='Balance: '+data.balance.balance+' '+currency+' · '+(account.loginid||account.id);if(sessionStartBalance===null){sessionStartBalance=Number(data.balance.balance);saveRiskState();}updateAutoUI();
    }
    if(data.msg_type==='tick'&&data.tick){
     $('price').innerHTML=Number(data.tick.quote).toLocaleString(undefined,{maximumFractionDigits:8})+'<small>'+data.tick.symbol+' · LIVE</small>';
@@ -146,7 +154,7 @@ async function connect(){
    }
    if(data.msg_type==='proposal_open_contract'&&data.proposal_open_contract){
     const contract=data.proposal_open_contract;
-    if(contract.is_sold&&!settledContractIds.has(String(contract.contract_id||activeContractId))){const cid=String(contract.contract_id||activeContractId||'unknown');settledContractIds.add(cid);const profit=Number(contract.profit||0);sessionPL+=profit;if(profit>0){wins++;consecutiveLosses=0;}else{losses++;consecutiveLosses++;}tradeInProgress=false;activeContractId=null;autoCooldown=12;log('RESULT: '+contract.status+' · Profit: '+profit.toFixed(2)+' '+currency+' · Payout: '+contract.payout);$('tradeStatus').textContent='Last result: '+contract.status+' · Profit: '+profit.toFixed(2)+' '+currency;updateAutoUI();if(autoRunning&&sessionStartBalance!==null&&(sessionPL<=-(sessionStartBalance*0.07)||consecutiveLosses>=2)){stopAuto('Safety stop: '+(consecutiveLosses>=2?'2 consecutive losses':'7% session drawdown')+'. Review results before restarting.');}}
+    if(contract.is_sold&&!settledContractIds.has(String(contract.contract_id||activeContractId))){const cid=String(contract.contract_id||activeContractId||'unknown');settledContractIds.add(cid);const profit=Number(contract.profit||0);sessionPL+=profit;if(profit>0){wins++;consecutiveLosses=0;}else{losses++;consecutiveLosses++;}saveRiskState();tradeInProgress=false;activeContractId=null;autoCooldown=12;log('RESULT: '+contract.status+' · Profit: '+profit.toFixed(2)+' '+currency+' · Payout: '+contract.payout);$('tradeStatus').textContent='Last result: '+contract.status+' · Profit: '+profit.toFixed(2)+' '+currency;updateAutoUI();if(autoRunning&&sessionStartBalance!==null&&(sessionPL<=-(sessionStartBalance*0.07)||consecutiveLosses>=2)){stopAuto('Safety stop: '+(consecutiveLosses>=2?'2 consecutive losses':'7% session drawdown')+'. Review results before restarting.');}}
    }
   };
   socket.onerror=()=>{if(ws===socket){status('❌ WebSocket connection error','#641f2a');log('Secure WebSocket connection failed. Check your network and try again.');}};
