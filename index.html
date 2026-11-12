@@ -38,18 +38,35 @@
 <button class="blue full" onclick="subscribeTicks()">GET LIVE PRICE</button>
 </div>
 <div class="card">
-<label for="stake">Stake (account currency)</label><input id="stake" type="number" value="1" min="0.35" step="0.01">
-<label for="duration">Duration (ticks)</label><input id="duration" type="number" value="5" min="1" max="10" step="1">
+<label for="stake">Stake (account currency)</label><input id="stake" type="number" value="0.35" min="0.35" step="0.01">
+<label for="duration">Scalp duration (ticks)</label><select id="duration"><option value="5" selected>5 ticks · Fast</option><option value="10">10 ticks · Balanced</option><option value="15">15 ticks · Longer scalp</option></select>
 <div class="row"><button class="green" id="callBtn" onclick="requestTrade('CALL')" disabled>▲ RISE</button><button class="red" id="putBtn" onclick="requestTrade('PUT')" disabled>▼ FALL</button></div>
 <div id="tradeStatus" class="muted" style="margin-top:10px">Connect and authorize a Demo or Real account to enable trading.</div>
+</div>
+<div class="card">
+<h3 style="margin:0 0 8px">AMD Auto Trader</h3>
+<div class="muted">SCALPING MODE · EMA 5/13 trend + RSI(14) confirmation. Uses 5, 10 or 15 tick contracts and waits for a signal.</div>
+<div class="row"><button class="green" id="autoStart" onclick="startAuto()" disabled>START AUTO</button><button class="red" id="autoStop" onclick="stopAuto()" disabled>STOP AUTO</button></div>
+<div id="autoState" class="muted" style="margin-top:9px">Automation is OFF. Connect a DEMO account first.</div>
+<div id="autoStats" class="muted" style="margin-top:7px">Session P/L: 0.00 · Wins: 0 · Losses: 0</div>
+<div class="muted" style="margin-top:8px">Scalping controls: 0.35 fixed stake, selectable 5/10/15-tick expiry, one open contract, 12-tick cooldown, stop after 2 consecutive losses or 7% session drawdown. No martingale.</div>
 </div>
 <div class="card"><div id="log">Activity log\nWaiting for connection…</div></div>
 <script>
 let ws=null, mode='demo', authorized=false, currency='USD', tickSubId=null, contractSubs=new Set(), pendingProposal=null;
+let autoRunning=false, tradeInProgress=false, activeContractId=null, priceHistory=[], autoCooldown=0, sessionStartBalance=null, sessionPL=0, wins=0, losses=0, consecutiveLosses=0, settledContractIds=new Set();
+const riskStorageKey='amdAutoRiskState';
+function saveRiskState(){
+ try{localStorage.setItem(riskStorageKey,JSON.stringify({day:new Date().toLocaleDateString(),startBalance:sessionStartBalance,sessionPL,wins,losses,consecutiveLosses}));}catch(e){}
+}
+function restoreRiskState(){
+ try{const s=JSON.parse(localStorage.getItem(riskStorageKey)||'null');if(s&&s.day===new Date().toLocaleDateString()){sessionStartBalance=Number(s.startBalance)||null;sessionPL=Number(s.sessionPL)||0;wins=Number(s.wins)||0;losses=Number(s.losses)||0;consecutiveLosses=Number(s.consecutiveLosses)||0;}}catch(e){}
+}
+restoreRiskState();
 const $=id=>document.getElementById(id);
 function log(message){const el=$('log');el.textContent+='\n'+new Date().toLocaleTimeString()+'  '+message;el.scrollTop=el.scrollHeight;}
 function status(message,color='#252a33'){$('status').textContent=message;$('status').style.background=color;}
-function setTradeEnabled(on){$('callBtn').disabled=!on;$('putBtn').disabled=!on;}
+function setTradeEnabled(on){$('callBtn').disabled=!on||autoRunning;$('putBtn').disabled=!on||autoRunning;$('autoStart').disabled=!on||autoRunning;$('autoStop').disabled=!autoRunning;}
 function activeToken(){return (mode==='demo'?$ ('demoToken'):$('realToken')).value.trim();}
 function setMode(next){
  if(next===mode)return;
@@ -61,6 +78,7 @@ function setMode(next){
  log('Mode changed to '+mode.toUpperCase()+'. Reconnect to authorize this account.');
 }
 function disconnect(showLog=true){
+ autoRunning=false;tradeInProgress=false;activeContractId=null;updateAutoUI();
  if(ws){const old=ws;ws=null;old.onclose=null;try{old.close();}catch(e){}}
  authorized=false;tickSubId=null;contractSubs.clear();setTradeEnabled(false);
  if(showLog)log('Disconnected.');
@@ -116,13 +134,15 @@ async function connect(){
   socket.onmessage=event=>{
    if(ws!==socket)return;
    let data;try{data=JSON.parse(event.data)}catch(e){log('Received unreadable server response.');return;}
-   if(data.error){const msg=data.error.message||'Unknown API error';log('Deriv API error: '+msg);$('tradeStatus').textContent=msg;if(data.msg_type==='proposal')pendingProposal=null;return;}
+   if(data.error){const msg=data.error.message||'Unknown API error';log('Deriv API error: '+msg);$('tradeStatus').textContent=msg;if(data.msg_type==='proposal'||data.msg_type==='buy'){pendingProposal=null;tradeInProgress=false;autoCooldown=12;}return;}
    if(data.msg_type==='balance'&&data.balance){
     currency=data.balance.currency||currency;
-    $('balance').textContent='Balance: '+data.balance.balance+' '+currency+' · '+(account.loginid||account.id);
+    $('balance').textContent='Balance: '+data.balance.balance+' '+currency+' · '+(account.loginid||account.id);if(sessionStartBalance===null){sessionStartBalance=Number(data.balance.balance);saveRiskState();}updateAutoUI();
    }
    if(data.msg_type==='tick'&&data.tick){
-    $('price').innerHTML=Number(data.tick.quote).toLocaleString(undefined,{maximumFractionDigits:8})+'<small>'+data.tick.symbol+' · LIVE</small>';
+    const quote=Number(data.tick.quote);
+    $('price').innerHTML=quote.toLocaleString(undefined,{maximumFractionDigits:8})+'<small>'+data.tick.symbol+' · LIVE</small>';
+    onMarketTick(quote);
    }
    if(data.msg_type==='proposal'&&data.proposal&&pendingProposal){
     const trade=pendingProposal;pendingProposal=null;
@@ -130,17 +150,18 @@ async function connect(){
     socket.send(JSON.stringify({buy:data.proposal.id,price:Number(data.proposal.ask_price||trade.stake)}));
    }
    if(data.msg_type==='buy'&&data.buy){
+    activeContractId=data.buy.contract_id;
     log('Trade purchased. Contract ID: '+data.buy.contract_id+' · Buy price: '+data.buy.buy_price);
     $('tradeStatus').textContent='Trade opened. Waiting for contract result…';
     socket.send(JSON.stringify({proposal_open_contract:1,contract_id:data.buy.contract_id,subscribe:1}));
    }
    if(data.msg_type==='proposal_open_contract'&&data.proposal_open_contract){
     const contract=data.proposal_open_contract;
-    if(contract.is_sold){const profit=Number(contract.profit||0);log('RESULT: '+contract.status+' · Profit: '+profit.toFixed(2)+' '+currency+' · Payout: '+contract.payout);$('tradeStatus').textContent='Last result: '+contract.status+' · Profit: '+profit.toFixed(2)+' '+currency;}
+    if(contract.is_sold&&!settledContractIds.has(String(contract.contract_id||activeContractId))){const cid=String(contract.contract_id||activeContractId||'unknown');settledContractIds.add(cid);const profit=Number(contract.profit||0);sessionPL+=profit;if(profit>0){wins++;consecutiveLosses=0;}else{losses++;consecutiveLosses++;}saveRiskState();tradeInProgress=false;activeContractId=null;autoCooldown=12;log('RESULT: '+contract.status+' · Profit: '+profit.toFixed(2)+' '+currency+' · Payout: '+contract.payout);$('tradeStatus').textContent='Last result: '+contract.status+' · Profit: '+profit.toFixed(2)+' '+currency;updateAutoUI();if(autoRunning&&sessionStartBalance!==null&&(sessionPL<=-(sessionStartBalance*0.07)||consecutiveLosses>=2)){stopAuto('Safety stop: '+(consecutiveLosses>=2?'2 consecutive losses':'7% session drawdown')+'. Review results before restarting.');}}
    }
   };
   socket.onerror=()=>{if(ws===socket){status('❌ WebSocket connection error','#641f2a');log('Secure WebSocket connection failed. Check your network and try again.');}};
-  socket.onclose=event=>{if(ws===socket){ws=null;authorized=false;setTradeEnabled(false);status('⚪ Disconnected');$('tradeStatus').textContent='Disconnected. Reconnect to trade.';log('Connection closed (code '+event.code+').');}};
+  socket.onclose=event=>{if(ws===socket){ws=null;authorized=false;autoRunning=false;tradeInProgress=false;updateAutoUI();setTradeEnabled(false);status('⚪ Disconnected');$('tradeStatus').textContent='Disconnected. Reconnect to trade.';log('Connection closed (code '+event.code+').');}};
  }catch(error){
   authorized=false;setTradeEnabled(false);status('❌ Connection failed','#641f2a');
   const message=error?.message||'Unknown connection error';log(message);$('tradeStatus').textContent=message;
@@ -155,15 +176,47 @@ function subscribeTicks(){
 }
 function requestTrade(direction){
  if(!authorized||!ws||ws.readyState!==1){alert('Connect and authorize the selected account first.');return;}
- if(mode==='real'&&!confirm('Confirm REAL MONEY trade: '+direction+' '+$('symbol').value+' with stake '+$('stake').value+' '+currency+'?'))return;
- const stake=Number($('stake').value),duration=Number($('duration').value);
+ if(mode==='real'&&!autoRunning&&!confirm('Confirm REAL MONEY trade: '+direction+' '+$('symbol').value+' with stake '+$('stake').value+' '+currency+'?'))return;
+ const stake=autoRunning?0.35:Number($('stake').value),duration=Number($('duration').value);
  if(!Number.isFinite(stake)||stake<=0){alert('Enter a valid stake.');return;}
- if(!Number.isInteger(duration)||duration<1||duration>10){alert('Duration must be 1–10 ticks.');return;}
+ if(!Number.isInteger(duration)||![5,10,15].includes(duration)){alert('Choose a scalp duration of 5, 10 or 15 ticks.');return;}
  if(pendingProposal){alert('A trade quote is already being processed. Please wait.');return;}
- const trade={direction,stake};pendingProposal=trade;
+ if(tradeInProgress){if(!autoRunning)alert('A trade is already being processed. Please wait.');return;}
+ const trade={direction,stake};pendingProposal=trade;tradeInProgress=true;
  $('tradeStatus').textContent='Requesting a price quote…';log('Requesting '+direction+' proposal: '+stake+' '+currency+', '+duration+' ticks.');
  ws.send(JSON.stringify({proposal:1,amount:stake,basis:'stake',contract_type:direction,currency,duration,duration_unit:'t',subscribe:1,underlying_symbol:$('symbol').value}));
 }
+
+function updateAutoUI(message){
+ $('autoState').textContent=message||(autoRunning?'AUTO ON · Waiting for a confirmed signal.':'Automation is OFF.');
+ $('autoStats').textContent='Session P/L: '+sessionPL.toFixed(2)+' '+currency+' · Wins: '+wins+' · Losses: '+losses+' · Consecutive losses: '+consecutiveLosses;
+ $('autoStart').disabled=!authorized||autoRunning;$('autoStop').disabled=!autoRunning;
+ $('callBtn').disabled=!authorized||autoRunning;$('putBtn').disabled=!authorized||autoRunning;
+}
+function startAuto(){
+ if(!authorized||!ws||ws.readyState!==1){alert('Connect your account first.');return;}
+ if(mode==='real'&&!confirm('START FULLY AUTOMATED REAL-MONEY TRADING? The bot can lose your funds. Start only after extensive Demo testing.'))return;
+ if(sessionStartBalance===null){alert('Wait until your account balance appears, then try again.');return;}
+ autoRunning=true;autoCooldown=12;priceHistory=[];updateAutoUI('AUTO ON · Collecting market data before the first signal.');log('AUTO SCALPER STARTED. EMA 5/13 + RSI confirmation. Duration: '+$('duration').value+' ticks. No martingale.');setTradeEnabled(true);
+}
+function stopAuto(reason){
+ autoRunning=false;updateAutoUI(reason||'AUTO OFF · No new trades will be opened.');log(reason||'Auto trader stopped by user.');setTradeEnabled(authorized);
+}
+function calcRsi(values,period=14){
+ if(values.length<period+1)return null;let gains=0,losses=0;
+ for(let i=values.length-period;i<values.length;i++){const d=values[i]-values[i-1];if(d>0)gains+=d;else losses-=d;}
+ if(losses===0)return 100;const rs=(gains/period)/(losses/period);return 100-(100/(1+rs));
+}
+function ema(values,period){const k=2/(period+1);let v=values[0];for(let i=1;i<values.length;i++)v=values[i]*k+v*(1-k);return v;}
+function onMarketTick(price){
+ if(!Number.isFinite(price)||price<=0)return;priceHistory.push(price);if(priceHistory.length>80)priceHistory.shift();
+ if(autoCooldown>0)autoCooldown--;
+ if(!autoRunning||tradeInProgress||autoCooldown>0||priceHistory.length<30)return;
+ const sample=priceHistory.slice(-30),fast=ema(sample,5),slow=ema(sample,13),rsi=calcRsi(priceHistory,14);if(rsi===null)return;
+ let direction=null;if(fast>slow&&rsi>=55&&rsi<=68)direction='CALL';else if(fast<slow&&rsi<=45&&rsi>=32)direction='PUT';
+ if(direction){log('AUTO SIGNAL: '+(direction==='CALL'?'RISE':'FALL')+' · EMA trend confirmed · RSI '+rsi.toFixed(1));requestTrade(direction);}
+}
+
 window.addEventListener('beforeunload',()=>{if(ws)ws.close();});
 </script>
 </body>
