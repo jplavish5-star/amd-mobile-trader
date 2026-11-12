@@ -126,7 +126,7 @@ async function connect(){
   socket.onmessage=event=>{
    if(ws!==socket)return;
    let data;try{data=JSON.parse(event.data)}catch(e){log('Received unreadable server response.');return;}
-   if(data.error){const msg=data.error.message||'Unknown API error';log('Deriv API error: '+msg);$('tradeStatus').textContent=msg;if(data.msg_type==='proposal'||data.msg_type==='buy'){pendingProposal=null;tradeInProgress=false;}return;}
+   if(data.error){const msg=data.error.message||'Unknown API error';log('Deriv API error: '+msg);$('tradeStatus').textContent=msg;if(data.msg_type==='proposal'||data.msg_type==='buy'){pendingProposal=null;tradeInProgress=false;autoCooldown=12;}return;}
    if(data.msg_type==='balance'&&data.balance){
     currency=data.balance.currency||currency;
     $('balance').textContent='Balance: '+data.balance.balance+' '+currency+' · '+(account.loginid||account.id);if(sessionStartBalance===null)sessionStartBalance=Number(data.balance.balance);updateAutoUI();
@@ -165,8 +165,8 @@ function subscribeTicks(){
 }
 function requestTrade(direction){
  if(!authorized||!ws||ws.readyState!==1){alert('Connect and authorize the selected account first.');return;}
- if(mode==='real'&&!confirm('Confirm REAL MONEY trade: '+direction+' '+$('symbol').value+' with stake '+$('stake').value+' '+currency+'?'))return;
- const stake=Number($('stake').value),duration=Number($('duration').value);
+ if(mode==='real'&&!autoRunning&&!confirm('Confirm REAL MONEY trade: '+direction+' '+$('symbol').value+' with stake '+$('stake').value+' '+currency+'?'))return;
+ const stake=autoRunning?0.35:Number($('stake').value),duration=Number($('duration').value);
  if(!Number.isFinite(stake)||stake<=0){alert('Enter a valid stake.');return;}
  if(!Number.isInteger(duration)||duration<1||duration>10){alert('Duration must be 1–10 ticks.');return;}
  if(pendingProposal){alert('A trade quote is already being processed. Please wait.');return;}
