@@ -20,7 +20,7 @@
 </div>
 <div id="realWarning" class="warning" hidden>REAL MONEY MODE: trades can lose real funds. Check your stake and contract details carefully. You must explicitly confirm before connecting or placing a trade.</div>
 <label for="appId">Deriv App ID</label>
-<input id="appId" inputmode="numeric" value="1089" autocomplete="off">
+<input id="appId" inputmode="text" value="" placeholder="Paste your Deriv App ID" autocomplete="off" spellcheck="false">
 <label for="demoToken">Demo API token</label>
 <input id="demoToken" type="password" placeholder="Paste your demo token" autocomplete="off">
 <label for="realToken">Real API token</label>
@@ -67,7 +67,7 @@ function disconnect(showLog=true){
 }
 function connect(){
  const appId=$('appId').value.trim(),token=activeToken();
- if(!/^\d+$/.test(appId)){alert('Enter a numeric Deriv App ID.');return;}
+ if(!/^[A-Za-z0-9]+$/.test(appId)){alert('Enter the App ID shown on your Deriv PAT application.');return;}
  if(!token){alert('Enter the API token for the selected '+mode.toUpperCase()+' account.');return;}
  if(mode==='real'&&!confirm('You are connecting a REAL account. Trades may use real money. Continue?'))return;
  disconnect(false);
