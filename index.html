@@ -1,4 +1,4 @@
-<!doctype html>
+ <!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -25,75 +25,37 @@ button{font:inherit;cursor:pointer}.primary,.secondary{width:100%;border-radius:
 </style></head>
 <body><main>
 <div class="top"><div><h1>AMD Mobile Trader</h1><div class="sub">Deriv live prices • Synthetic + Forex • Paper trading</div></div><span class="pill">LIVE FEED / DEMO</span></div>
-
 <section class="card">
  <div class="row"><span class="label">PAPER ACCOUNT BALANCE</span><span class="pill" id="modeBadge">DEMO SIMULATION</span></div>
  <div class="balance" id="balance">$5.00</div>
- <div class="grid">
-  <div class="metric"><div class="label">Session P/L</div><strong id="pnl">$0.00</strong></div>
-  <div class="metric"><div class="label">Closed paper trades</div><strong id="tradeCount">0</strong></div>
- </div>
+ <div class="grid"><div class="metric"><div class="label">Session P/L</div><strong id="pnl">$0.00</strong></div><div class="metric"><div class="label">Closed paper trades</div><strong id="tradeCount">0</strong></div></div>
  <p class="note">Your $5 demo balance is simulated in this page. It is separate from your Deriv account balance.</p>
 </section>
-
-<section class="card">
- <div class="tabs"><button id="demoTab" class="active">Demo $5</button><button id="liveTab">Live $10 🔒</button></div>
- <p class="note" id="modeNote">Paper-trading mode. No orders are sent to Deriv.</p>
-</section>
-
+<section class="card"><div class="tabs"><button id="demoTab" class="active">Demo $5</button><button id="liveTab">Live $10 🔒</button></div><p class="note" id="modeNote">Paper-trading mode. No orders are sent to Deriv.</p></section>
 <section class="card">
  <div class="label">MARKET DATA CONNECTION</div>
- <label class="small" for="appId">Deriv app ID — fixed to 1089 (Deriv public demo)</label>
- <input id="appId" inputmode="numeric" value="1089" placeholder="1089">
+ <label class="small" for="appId">Your Deriv App ID</label>
+ <input id="appId" value="34VZgNqVNBMxr6yI4Y1nT">
  <button class="primary" id="connect">Connect live prices</button>
  <div class="status"><span class="dot" id="connDot"></span><span id="connText">Not connected</span></div>
- <p class="note">This module requests public tick data only. No API token or account authorization is needed for this price-feed test.</p>
+ <p class="note">Public tick data only. No API token needed for this price-feed test.</p>
 </section>
-
 <section class="card">
  <div class="label">MARKET SELECTOR</div>
- <select id="market">
-  <option value="R_10">Synthetic • Volatility 10 Index</option>
-  <option value="R_25">Synthetic • Volatility 25 Index</option>
-  <option value="R_50">Synthetic • Volatility 50 Index</option>
-  <option value="R_75">Synthetic • Volatility 75 Index</option>
-  <option value="R_100">Synthetic • Volatility 100 Index</option>
-  <option value="frxEURUSD">Forex • EUR/USD</option>
-  <option value="frxGBPUSD">Forex • GBP/USD</option>
-  <option value="frxUSDJPY">Forex • USD/JPY</option>
-  <option value="frxAUDUSD">Forex • AUD/USD</option>
- </select>
+ <select id="market"><option value="R_10">Synthetic • Volatility 10 Index</option><option value="R_25">Synthetic • Volatility 25 Index</option><option value="R_50">Synthetic • Volatility 50 Index</option><option value="R_75">Synthetic • Volatility 75 Index</option><option value="R_100">Synthetic • Volatility 100 Index</option><option value="frxEURUSD">Forex • EUR/USD</option><option value="frxGBPUSD">Forex • GBP/USD</option><option value="frxUSDJPY">Forex • USD/JPY</option><option value="frxAUDUSD">Forex • AUD/USD</option></select>
  <div class="row" style="margin-top:13px"><div><div class="label">LATEST PRICE</div><div class="price" id="price">—</div></div><div style="text-align:right"><div class="label">TICK CHANGE</div><strong id="tickChange">—</strong></div></div>
  <div class="small" id="lastTick">Waiting for live tick data</div>
  <canvas class="chart" id="chart" width="560" height="110"></canvas>
  <div class="row" style="margin-top:10px"><button class="secondary" id="subscribe" style="flex:1">Subscribe selected market</button><button class="secondary" id="disconnect" style="flex:1">Disconnect</button></div>
 </section>
-
-<section class="card">
- <div class="label">PAPER TEST ENGINE</div>
- <div class="grid">
-  <div class="metric"><div class="label">Stake per test</div><strong>$0.10</strong></div>
-  <div class="metric"><div class="label">Demo loss stop</div><strong>$1.00</strong></div>
- </div>
- <button class="primary" id="paperStart" disabled>Start paper monitor</button>
- <button class="secondary" id="paperStop" disabled>Stop paper monitor</button>
- <p class="note">The monitor records live prices and a simple illustrative signal. It does not place contracts or promise a profitable strategy. Paper P/L is not a forecast of real Deriv payouts.</p>
-</section>
-
-<section class="card">
- <div class="label">TEST CHECKLIST</div>
- <div class="small" id="checkFeed">○ Live feed connected</div>
- <div class="small" id="checkTicks" style="margin-top:6px">○ Receiving multiple ticks</div>
- <div class="small" id="checkPaper" style="margin-top:6px">○ Paper monitor tested</div>
- <div class="small" id="checkLive" style="margin-top:6px">🔒 Live trading disabled</div>
-</section>
-
-<section class="card"><div class="label">ACTIVITY LOG</div><div class="log" id="log">Ready. Tap Connect to request live public prices (App ID 1089).</div></section>
-<section class="card warn"><strong>Live trading is locked.</strong><p class="note">Live mode remains display-only at $10. This prototype has no trade-placement code. Before any live execution, we must validate the official API flow, contract specifications, minimum stake, order responses, reconnect behavior and loss limits. Do not paste an API token into this page.</p></section>
+<section class="card"><div class="label">PAPER TEST ENGINE</div><div class="grid"><div class="metric"><div class="label">Stake per test</div><strong>$0.10</strong></div><div class="metric"><div class="label">Demo loss stop</div><strong>$1.00</strong></div></div><button class="primary" id="paperStart" disabled>Start paper monitor</button><button class="secondary" id="paperStop" disabled>Stop paper monitor</button><p class="note">The monitor records live prices and a simple illustrative signal. It does not place contracts or promise a profitable strategy.</p></section>
+<section class="card"><div class="label">TEST CHECKLIST</div><div class="small" id="checkFeed">○ Live feed connected</div><div class="small" id="checkTicks" style="margin-top:6px">○ Receiving multiple ticks</div><div class="small" id="checkPaper" style="margin-top:6px">○ Paper monitor tested</div><div class="small" id="checkLive" style="margin-top:6px">🔒 Live trading disabled</div></section>
+<section class="card"><div class="label">ACTIVITY LOG</div><div class="log" id="log">Ready. Tap Connect to request live public prices.</div></section>
+<section class="card warn"><strong>Live trading is locked.</strong><p class="note">Live mode remains display-only at $10. This prototype has no trade-placement code. Do not paste an API token into this page.</p></section>
 </main>
 <script>
 const $=id=>document.getElementById(id);
-let ws=null,req=0,subId=null,active=false,paper=false,mode='demo',balance=5,startBalance=5,prices=[],ticks=0,previous=null,paperTrades=0;
+let ws=null,req=0,subId=null,paper=false,mode='demo',balance=5,startBalance=5,prices=[],ticks=0,previous=null,paperTrades=0;
 function log(s){$('log').textContent=new Date().toLocaleTimeString()+'  '+s+'\n'+$('log').textContent}
 function setConn(ok,msg){$('connDot').className='dot '+(ok?'ok':'bad');$('connText').textContent=msg;$('checkFeed').textContent=(ok?'✓':'○')+' Live feed connected';$('paperStart').disabled=!ok||mode!=='demo';}
 function render(){ $('balance').textContent='$'+balance.toFixed(2);let p=balance-startBalance;$('pnl').textContent=(p>=0?'+':'')+'$'+p.toFixed(2);$('pnl').className=p>=0?'up':'down';$('tradeCount').textContent=paperTrades;$('demoTab').classList.toggle('active',mode==='demo');$('liveTab').classList.toggle('active',mode==='live');$('modeBadge').textContent=mode==='demo'?'DEMO SIMULATION':'LIVE LOCKED';$('modeNote').textContent=mode==='demo'?'Paper-trading mode. No orders are sent to Deriv.':'Live balance target: $10. Real trading is disabled.';$('paperStart').disabled=!ws||mode!=='demo'||paper;}
@@ -102,12 +64,11 @@ function send(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o))}
 function unsubscribe(){if(subId)send({forget:subId});subId=null}
 function subscribe(){if(!ws||ws.readyState!==1)return;unsubscribe();ticks=0;previous=null;prices=[];$('price').textContent='—';$('tickChange').textContent='—';send({ticks:$('market').value,subscribe:1,req_id:++req});log('Requested '+$('market').value+' tick stream.')}
 function connect(){
-  // FIXED: always use 1089, ignore empty / wrong input
   let id = ($('appId').value||'').trim();
-  if(!/^\d+$/.test(id)){ id='1089'; $('appId').value='1089'; log('App ID was empty, using 1089'); }
+  if(!/^[A-Za-z0-9]+$/.test(id)){ id='34VZgNqVNBMxr6yI4Y1nT'; $('appId').value=id; log('App ID was empty, using your App ID'); }
   disconnect();
   let url='wss://ws.derivws.com/websockets/v3?app_id='+encodeURIComponent(id);
-  log('Connecting to '+url);
+  log('Connecting with App ID: '+id);
   try{ws=new WebSocket(url)}catch(e){setConn(false,'Could not create WebSocket');log('Connection error: '+e.message);return}
   setConn(false,'Connecting to Deriv…');
   ws.onopen=()=>{setConn(true,'Connected to Deriv public feed');log('WebSocket connected. Requesting selected market.');subscribe()};
