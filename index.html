@@ -2,151 +2,129 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>AMD Mobile Trader - FIXED</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0f1115">
+<title>AMD Mobile Trader</title>
 <style>
-*{box-sizing:border-box;margin:0;padding:0;font-family:Arial,sans-serif}
-body{background:#0f1115;color:#fff;padding:12px;padding-bottom:80px}
-h1{font-size:20px;text-align:center;margin:8px 0}
-h1 span{color:#00e676}
-.card{background:#1a1d24;border-radius:14px;padding:14px;margin:10px 0}
-label{font-size:13px;color:#aaa;display:block;margin-bottom:6px}
-input,select{width:100%;padding:12px;border-radius:10px;border:1px solid #333;background:#0f1115;color:#fff;font-size:15px;margin-bottom:10px}
-button{width:100%;padding:14px;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;margin-top:6px}
-.btn-green{background:#00e676;color:#000}
-.btn-red{background:#ff1744;color:#fff}
-.btn-blue{background:#2962ff;color:#fff}
-.row{display:flex;gap:10px}
-.row>*{flex:1}
-#status{text-align:center;padding:10px;border-radius:10px;background:#222;font-size:14px;margin:10px 0}
-#price{font-size:36px;text-align:center;font-weight:800;margin:6px 0}
-#price small{font-size:14px;color:#aaa;display:block}
-#balance{font-size:18px;text-align:center;color:#00e676}
-#payout{font-size:13px;text-align:center;color:#aaa;margin-top:6px}
-#log{background:#000;border-radius:10px;padding:10px;font-size:12px;height:120px;overflow-y:auto;white-space:pre-wrap;color:#0f0}
+*{box-sizing:border-box;font-family:Arial,sans-serif}body{margin:0;background:#0f1115;color:#fff;padding:14px 14px 36px;max-width:620px;margin:auto}h1{text-align:center;font-size:21px;margin:10px 0 16px}h1 span{color:#00e676}.card{background:#1a1d24;border-radius:14px;padding:15px;margin:12px 0}label{display:block;color:#b8bec9;font-size:13px;margin:10px 0 6px}input,select{width:100%;padding:12px;border-radius:9px;border:1px solid #39404c;background:#101319;color:#fff;font-size:15px}button{border:0;border-radius:10px;padding:13px;font-weight:700;font-size:15px;cursor:pointer;margin-top:10px}button:disabled{opacity:.4;cursor:not-allowed}.full{width:100%}.blue{background:#2962ff;color:white}.green{background:#00e676;color:#07130b}.red{background:#ff1744;color:white}.row{display:flex;gap:10px}.row>*{flex:1}#status{text-align:center;padding:11px;border-radius:10px;background:#252a33;font-size:13px;margin:10px 0}#balance{text-align:center;color:#00e676;font-size:17px;margin-top:10px}#price{text-align:center;font-size:36px;font-weight:800;margin:8px 0}#price small{display:block;font-size:13px;color:#aab2bf;font-weight:400;margin-top:4px}.muted{color:#9ca5b3;font-size:12px;line-height:1.45}.mode{display:flex;gap:8px}.mode button{flex:1;margin:0;background:#303642;color:#ddd;border:2px solid transparent}.mode button.selected.demo{background:#153d2a;border-color:#00e676;color:#b9ffd5}.mode button.selected.real{background:#4a1822;border-color:#ff536d;color:#ffd4dc}.warning{background:#3b2024;border:1px solid #8e3543;color:#ffd6dc;padding:10px;border-radius:9px;font-size:12px;line-height:1.4;margin-top:10px}#log{background:#080a0d;border-radius:10px;padding:10px;font:12px/1.5 monospace;height:145px;overflow:auto;white-space:pre-wrap;color:#a8ffb9}
 </style>
 </head>
 <body>
 <h1>AMD <span>MOBILE TRADER</span></h1>
-<div id="status">⚪ Disconnected - FIXED to use ws.derivws.com</div>
-
+<div id="status">⚪ Disconnected</div>
 <div class="card">
-<label>App ID</label>
-<input id="appId" value="1089">
-<label>Deriv API Token (from deriv.com > Account Settings > API Token)</label>
-<input id="token" placeholder="Paste token here - leave blank for demo ticks only">
-<button class="btn-blue" onclick="connect()">CONNECT</button>
+<label>Trading account</label>
+<div class="mode">
+<button id="demoMode" class="selected demo" type="button" onclick="setMode('demo')">DEMO</button>
+<button id="realMode" class="real" type="button" onclick="setMode('real')">REAL</button>
+</div>
+<div id="realWarning" class="warning" hidden>REAL MONEY MODE: trades can lose real funds. Check your stake and contract details carefully. You must explicitly confirm before connecting or placing a trade.</div>
+<label for="appId">Deriv App ID</label>
+<input id="appId" inputmode="numeric" value="1089" autocomplete="off">
+<label for="demoToken">Demo API token</label>
+<input id="demoToken" type="password" placeholder="Paste your demo token" autocomplete="off">
+<label for="realToken">Real API token</label>
+<input id="realToken" type="password" placeholder="Paste your real token" autocomplete="off">
+<p class="muted">Tokens stay in this page's memory only and are not saved to browser storage. Use separate Deriv tokens with trading permission for each account.</p>
+<button class="blue full" id="connectBtn" onclick="connect()">CONNECT SELECTED ACCOUNT</button>
 <div id="balance">Balance: --</div>
 </div>
-
 <div class="card">
-<div id="price">--<small id="symName">No symbol</small></div>
-<label>Market</label>
+<div id="price">--<small id="symName">Waiting for market data</small></div>
+<label for="symbol">Market</label>
 <select id="symbol">
-<option value="R_100">Volatility 100 (1s) Index</option>
-<option value="R_75">Volatility 75 (1s) Index</option>
-<option value="R_50">Volatility 50 (1s) Index</option>
-<option value="R_25">Volatility 25 (1s) Index</option>
-<option value="R_10">Volatility 10 (1s) Index</option>
-<option value="1HZ100V">Volatility 100 Index</option>
-<option value="1HZ75V">Volatility 75 Index</option>
-<option value="frxEURUSD">EUR/USD</option>
-<option value="frxGBPUSD">GBP/USD</option>
-<option value="frxUSDJPY">USD/JPY</option>
+<option value="R_100">Volatility 100 Index</option><option value="R_75">Volatility 75 Index</option><option value="R_50">Volatility 50 Index</option><option value="R_25">Volatility 25 Index</option><option value="R_10">Volatility 10 Index</option><option value="1HZ100V">Volatility 100 (1s) Index</option><option value="1HZ75V">Volatility 75 (1s) Index</option><option value="frxEURUSD">EUR/USD</option><option value="frxGBPUSD">GBP/USD</option><option value="frxUSDJPY">USD/JPY</option>
 </select>
-<button class="btn-blue" onclick="subscribe()">GET LIVE PRICE</button>
+<button class="blue full" onclick="subscribeTicks()">GET LIVE PRICE</button>
 </div>
-
 <div class="card">
-<label>Stake (USD)</label>
-<input id="stake" type="number" value="1" min="0.35" step="0.1">
-<label>Duration (ticks)</label>
-<input id="duration" type="number" value="5" min="1" max="10">
-<div class="row">
-<button class="btn-green" onclick="buy('CALL')">▲ RISE</button>
-<button class="btn-red" onclick="buy('PUT')">▼ FALL</button>
+<label for="stake">Stake (account currency)</label><input id="stake" type="number" value="1" min="0.35" step="0.01">
+<label for="duration">Duration (ticks)</label><input id="duration" type="number" value="5" min="1" max="10" step="1">
+<div class="row"><button class="green" id="callBtn" onclick="requestTrade('CALL')" disabled>▲ RISE</button><button class="red" id="putBtn" onclick="requestTrade('PUT')" disabled>▼ FALL</button></div>
+<div id="tradeStatus" class="muted" style="margin-top:10px">Connect and authorize a Demo or Real account to enable trading.</div>
 </div>
-<div id="payout">Payout will show after you connect</div>
-</div>
-
-<div class="card"><div id="log">Log:\nWaiting...\n</div></div>
-
+<div class="card"><div id="log">Activity log\nWaiting for connection…</div></div>
 <script>
-let ws=null, currentPrice=0, activeSymbol="R_100";
-const ENDPOINTS=[
-"wss://ws.derivws.com/websockets/v3",
-"wss://frontend.derivws.com/websockets/v3",
-"wss://ws.binaryws.com/websockets/v3"
-];
-let epIndex=0;
-function log(m){let l=document.getElementById('log');l.textContent+="\n"+m;l.scrollTop=l.scrollHeight;}
-function setStatus(t,c){let s=document.getElementById('status');s.textContent=t;s.style.background=c;}
+let ws=null, mode='demo', authorized=false, currency='USD', tickSubId=null, contractSubs=new Set(), pendingProposal=null;
+const $=id=>document.getElementById(id);
+function log(message){const el=$('log');el.textContent+='\n'+new Date().toLocaleTimeString()+'  '+message;el.scrollTop=el.scrollHeight;}
+function status(message,color='#252a33'){$('status').textContent=message;$('status').style.background=color;}
+function setTradeEnabled(on){$('callBtn').disabled=!on;$('putBtn').disabled=!on;}
+function activeToken(){return (mode==='demo'?$ ('demoToken'):$('realToken')).value.trim();}
+function setMode(next){
+ if(next===mode)return;
+ if(next==='real'&&!confirm('Switch to REAL MONEY mode? Trades can lose real funds. Continue?'))return;
+ disconnect(false);mode=next;
+ $('demoMode').classList.toggle('selected',mode==='demo');$('realMode').classList.toggle('selected',mode==='real');
+ $('realWarning').hidden=mode!=='real';$('balance').textContent='Balance: --';
+ $('tradeStatus').textContent=mode==='demo'?'Demo mode selected. Connect your Demo token to trade virtual funds.':'Real mode selected. Connect your Real token only when you are ready to risk real funds.';
+ log('Mode changed to '+mode.toUpperCase()+'. Reconnect to authorize this account.');
+}
+function disconnect(showLog=true){
+ if(ws){const old=ws;ws=null;old.onclose=null;try{old.close();}catch(e){}}
+ authorized=false;tickSubId=null;contractSubs.clear();setTradeEnabled(false);
+ if(showLog)log('Disconnected.');
+}
 function connect(){
-  let appId=document.getElementById('appId').value.trim()||"1089";
-  let token=document.getElementById('token').value.trim();
-  if(ws) try{ws.close()}catch(e){}
-  epIndex=0; tryConnect(appId,token);
+ const appId=$('appId').value.trim(),token=activeToken();
+ if(!/^\d+$/.test(appId)){alert('Enter a numeric Deriv App ID.');return;}
+ if(!token){alert('Enter the API token for the selected '+mode.toUpperCase()+' account.');return;}
+ if(mode==='real'&&!confirm('You are connecting a REAL account. Trades may use real money. Continue?'))return;
+ disconnect(false);
+ const socket=new WebSocket('wss://ws.derivws.com/websockets/v3?app_id='+encodeURIComponent(appId));
+ ws=socket;status('🟡 Connecting to Deriv…','#65420e');$('balance').textContent='Balance: --';log('Connecting '+mode.toUpperCase()+' account…');
+ socket.onopen=()=>{if(ws!==socket)return;socket.send(JSON.stringify({authorize:token}));};
+ socket.onmessage=event=>{
+  if(ws!==socket)return;
+  let data;try{data=JSON.parse(event.data)}catch(e){log('Received unreadable server response.');return;}
+  if(data.error){const msg=data.error.message||'Unknown API error';log('API error: '+msg);$('tradeStatus').textContent=msg;if(data.msg_type==='authorize'){status('❌ Authorization failed','#641f2a');authorized=false;setTradeEnabled(false);}if(data.msg_type==='proposal')pendingProposal=null;return;}
+  if(data.msg_type==='authorize'&&data.authorize){
+   authorized=true;currency=data.authorize.currency||'USD';
+   $('balance').textContent='Balance: '+data.authorize.balance+' '+currency+' · '+data.authorize.loginid;
+   status('🟢 '+mode.toUpperCase()+' account connected','#12452b');setTradeEnabled(true);
+   $('tradeStatus').textContent='Authorized '+mode.toUpperCase()+' account. Trades use '+currency+'.';
+   log('Authorized '+data.authorize.loginid+' ('+currency+').');subscribeTicks();
+  }
+  if(data.msg_type==='tick'&&data.tick){
+   $('price').innerHTML=Number(data.tick.quote).toLocaleString(undefined,{maximumFractionDigits:8})+'<small>'+data.tick.symbol+' · LIVE</small>';
+  }
+  if(data.msg_type==='proposal'&&data.proposal&&pendingProposal){
+   const trade=pendingProposal;pendingProposal=null;
+   log('Quote received. Buying '+trade.direction+'…');
+   socket.send(JSON.stringify({buy:data.proposal.id,price:trade.stake}));
+  }
+  if(data.msg_type==='buy'&&data.buy){
+   log('Trade purchased. Contract ID: '+data.buy.contract_id+' · Buy price: '+data.buy.buy_price);
+   $('tradeStatus').textContent='Trade opened. Waiting for contract result…';
+   socket.send(JSON.stringify({proposal_open_contract:1,contract_id:data.buy.contract_id,subscribe:1}));
+  }
+  if(data.msg_type==='proposal_open_contract'&&data.proposal_open_contract){
+   const c=data.proposal_open_contract;
+   if(c.is_sold){const profit=Number(c.profit||0);log('RESULT: '+c.status+' · Profit: '+profit.toFixed(2)+' '+currency+' · Payout: '+c.payout);$('tradeStatus').textContent='Last result: '+c.status+' · Profit: '+profit.toFixed(2)+' '+currency;}
+  }
+ };
+ socket.onerror=()=>{if(ws===socket){status('❌ WebSocket connection error','#641f2a');log('WebSocket error. Check connection and App ID.');}};
+ socket.onclose=()=>{if(ws===socket){ws=null;authorized=false;setTradeEnabled(false);status('⚪ Disconnected');$('tradeStatus').textContent='Disconnected. Reconnect to trade.';log('Connection closed.');}};
 }
-function tryConnect(appId,token){
-  if(epIndex>=ENDPOINTS.length){setStatus("❌ All servers failed - try Psiphon VPN","#ff1744");log("All endpoints failed");return;}
-  let url=ENDPOINTS[epIndex]+"?app_id="+appId;
-  log("Trying: "+ENDPOINTS[epIndex]);
-  setStatus("🟡 Connecting to "+ENDPOINTS[epIndex],"#ff9800");
-  ws=new WebSocket(url);
-  ws.onopen=()=>{
-    log("✅ CONNECTED to "+ENDPOINTS[epIndex]);
-    setStatus("🟢 Connected to "+ENDPOINTS[epIndex],"#00c853");
-    if(token){
-      ws.send(JSON.stringify({authorize:token}));
-    } else {
-      subscribe();
-    }
-  };
-  ws.onmessage=(e)=>{
-    let d=JSON.parse(e.data);
-    if(d.error){log("Error: "+d.error.message);return;}
-    if(d.authorize){document.getElementById('balance').textContent="Balance: $"+d.authorize.balance+" ("+d.authorize.currency+")";log("Authorized: "+d.authorize.loginid);subscribe();return;}
-    if(d.tick){
-      currentPrice=d.tick.quote;
-      document.getElementById('price').innerHTML=currentPrice+"<small id='symName'>"+d.tick.symbol+" - LIVE</small>";
-    }
-    if(d.buy){log("✅ Trade Bought! ID: "+d.buy.contract_id+" Price: $"+d.buy.buy_price);checkResult(d.buy.contract_id);return;}
-    if(d.proposal_open_contract){
-      let c=d.proposal_open_contract;
-      if(c.is_sold){
-        log("🏁 RESULT: "+(c.status)+" Profit: $"+c.profit+" Payout: $"+c.payout);
-        document.getElementById('payout').textContent="Last Result: "+c.status+" Profit: $"+c.profit;
-      }
-    }
-  };
-  ws.onclose=(e)=>{
-    log("Closed code "+e.code+" - trying next server...");
-    epIndex++; setTimeout(()=>tryConnect(appId,token),800);
-  };
-  ws.onerror=()=>{log("Socket error on "+ENDPOINTS[epIndex]);};
+function subscribeTicks(){
+ if(!ws||ws.readyState!==1){log('Connect first to receive market data.');return;}
+ const symbol=$('symbol').value;
+ if(tickSubId)ws.send(JSON.stringify({forget:tickSubId}));
+ ws.send(JSON.stringify({ticks:symbol,subscribe:1}));
+ $('symName').textContent=symbol+' · requesting live price';log('Requested live ticks for '+symbol+'.');
 }
-function subscribe(){
-  activeSymbol=document.getElementById('symbol').value;
-  if(!ws||ws.readyState!==1){log("Not connected yet");return;}
-  ws.send(JSON.stringify({forget_all:"ticks"}));
-  ws.send(JSON.stringify({ticks:activeSymbol,subscribe:1}));
-  log("Subscribed to "+activeSymbol);
+function requestTrade(direction){
+ if(!authorized||!ws||ws.readyState!==1){alert('Connect and authorize the selected account first.');return;}
+ if(mode==='real'&&!confirm('Confirm REAL MONEY trade: '+direction+' '+$('symbol').value+' with stake '+$('stake').value+' '+currency+'?'))return;
+ const stake=Number($('stake').value),duration=Number($('duration').value);
+ if(!Number.isFinite(stake)||stake<=0){alert('Enter a valid stake.');return;}
+ if(!Number.isInteger(duration)||duration<1||duration>10){alert('Duration must be 1–10 ticks.');return;}
+ if(pendingProposal){alert('A trade quote is already being processed. Please wait.');return;}
+ const trade={direction,stake};pendingProposal=trade;
+ $('tradeStatus').textContent='Requesting a price quote…';log('Requesting '+direction+' proposal: '+stake+' '+currency+', '+duration+' ticks.');
+ ws.send(JSON.stringify({proposal:1,amount:stake,basis:'stake',contract_type:direction,currency,duration,duration_unit:'t',symbol:$('symbol').value}));
 }
-function buy(type){
-  let stake=parseFloat(document.getElementById('stake').value);
-  let dur=parseInt(document.getElementById('duration').value);
-  let token=document.getElementById('token').value.trim();
-  if(!token){alert("Paste your Deriv API Token first to trade real/demo money");return;}
-  if(!ws||ws.readyState!==1){alert("Not connected");return;}
-  log("Buying "+type+" "+activeSymbol+" Stake $"+stake+" Duration "+dur+" ticks");
-  ws.send(JSON.stringify({buy:1,price:stake,parameters:{amount:stake,basis:"stake",contract_type:type,currency:"USD",duration:dur,duration_unit:"t",symbol:activeSymbol}}));
-}
-function checkResult(id){
-  let iv=setInterval(()=>{
-    if(ws&&ws.readyState===1) ws.send(JSON.stringify({proposal_open_contract:1,contract_id:id,subscribe:1}));
-  },1000);
-  setTimeout(()=>clearInterval(iv),30000);
-}
+window.addEventListener('beforeunload',()=>{if(ws)ws.close();});
 </script>
 </body>
-  </html>
+</html>
