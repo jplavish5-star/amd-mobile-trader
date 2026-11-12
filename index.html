@@ -74,6 +74,7 @@ async function connect(){
  if(!token){alert('Enter the API token for the selected '+mode.toUpperCase()+' account.');return;}
  if(mode==='real'&&!confirm('You are connecting a REAL account. Trades may use real money. Continue?'))return;
  disconnect(false);
+ sessionStartBalance=null;currentBalance=null;sessionPL=0;wins=0;losses=0;consecutiveLosses=0;$('currentBalance').textContent='--';$('initialBalance').textContent='--';$('sessionPL').textContent='0.00';$('winsCount').textContent='0';$('lossesCount').textContent='0';$('tradesCount').textContent='0';$('winRate').textContent='0%';
  ws=null;status('🟡 Authenticating with Deriv…','#65420e');$('balance').textContent='Balance: --';
  $('connectBtn').disabled=true;log('Requesting '+mode.toUpperCase()+' account access…');
  try{
