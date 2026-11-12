@@ -1,4 +1,4 @@
- <!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -35,10 +35,10 @@ button{font:inherit;cursor:pointer}.primary,.secondary{width:100%;border-radius:
 <section class="card">
  <div class="label">MARKET DATA CONNECTION</div>
  <label class="small" for="appId">Your Deriv App ID</label>
- <input id="appId" value="34VZgNqVNBMxr6yI4Y1nT">
+ <input id="appId" value="1089">
  <button class="primary" id="connect">Connect live prices</button>
  <div class="status"><span class="dot" id="connDot"></span><span id="connText">Not connected</span></div>
- <p class="note">Public tick data only. No API token needed for this price-feed test.</p>
+ <p class="note">Public tick data only. No API token needed.</p>
 </section>
 <section class="card">
  <div class="label">MARKET SELECTOR</div>
@@ -56,6 +56,7 @@ button{font:inherit;cursor:pointer}.primary,.secondary{width:100%;border-radius:
 <script>
 const $=id=>document.getElementById(id);
 let ws=null,req=0,subId=null,paper=false,mode='demo',balance=5,startBalance=5,prices=[],ticks=0,previous=null,paperTrades=0;
+let endpoints=[],endpointIndex=0,connecting=false,manualDisconnect=false;
 function log(s){$('log').textContent=new Date().toLocaleTimeString()+'  '+s+'\n'+$('log').textContent}
 function setConn(ok,msg){$('connDot').className='dot '+(ok?'ok':'bad');$('connText').textContent=msg;$('checkFeed').textContent=(ok?'✓':'○')+' Live feed connected';$('paperStart').disabled=!ok||mode!=='demo';}
 function render(){ $('balance').textContent='$'+balance.toFixed(2);let p=balance-startBalance;$('pnl').textContent=(p>=0?'+':'')+'$'+p.toFixed(2);$('pnl').className=p>=0?'up':'down';$('tradeCount').textContent=paperTrades;$('demoTab').classList.toggle('active',mode==='demo');$('liveTab').classList.toggle('active',mode==='live');$('modeBadge').textContent=mode==='demo'?'DEMO SIMULATION':'LIVE LOCKED';$('modeNote').textContent=mode==='demo'?'Paper-trading mode. No orders are sent to Deriv.':'Live balance target: $10. Real trading is disabled.';$('paperStart').disabled=!ws||mode!=='demo'||paper;}
@@ -63,20 +64,32 @@ function draw(){let c=$('chart'),ctx=c.getContext('2d'),w=c.width,h=c.height;ctx
 function send(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o))}
 function unsubscribe(){if(subId)send({forget:subId});subId=null}
 function subscribe(){if(!ws||ws.readyState!==1)return;unsubscribe();ticks=0;previous=null;prices=[];$('price').textContent='—';$('tickChange').textContent='—';send({ticks:$('market').value,subscribe:1,req_id:++req});log('Requested '+$('market').value+' tick stream.')}
+function tryEndpoint(){
+  if(endpointIndex>=endpoints.length){ setConn(false,'All Deriv servers blocked (1006)'); log('All servers tried. Your provider is blocking Deriv WebSocket.'); connecting=false; return; }
+  let url=endpoints[endpointIndex];
+  log('Trying server '+(endpointIndex+1)+'/'+endpoints.length+': '+url.split('?')[0]);
+  try{ws=new WebSocket(url)}catch(e){endpointIndex++;tryEndpoint();return}
+  setConn(false,'Connecting to Deriv… (server '+(endpointIndex+1)+')');
+  let opened=false;
+  ws.onopen=()=>{opened=true;connecting=false;setConn(true,'Connected to Deriv public feed');log('Connected on server '+(endpointIndex+1));subscribe()};
+  ws.onmessage=e=>{let d;try{d=JSON.parse(e.data)}catch{return}if(d.error){log('Deriv error: '+d.error.message+' (code: '+(d.error.code||'?')+')');return}if(d.msg_type==='tick'&&d.tick){let p=Number(d.tick.quote);if(!Number.isFinite(p))return;ticks++;previous=prices.length?prices[prices.length-1]:p;prices.push(p);if(prices.length>80)prices.shift();$('price').textContent=p.toFixed(d.tick.pip_size??5);let delta=p-previous;$('tickChange').textContent=(delta>=0?'+':'')+delta.toFixed(d.tick.pip_size??5);$('tickChange').className=delta>=0?'up':'down';$('lastTick').textContent='Last tick: '+new Date().toLocaleTimeString()+' • '+ticks+' ticks received';$('checkTicks').textContent='✓ Receiving multiple ticks ('+ticks+')';draw();if(paper)paperTick(p)}if(d.subscription&&d.subscription.id)subId=d.subscription.id};
+  ws.onerror=()=>{log('WebSocket error on server '+(endpointIndex+1))};
+  ws.onclose=(ev)=>{if(manualDisconnect){setConn(false,'Not connected');log('Disconnected by you.');return}if(opened){setConn(false,'Disconnected');log('WebSocket closed. code='+ev.code+' reason='+(ev.reason||'none'));return}log('Server '+(endpointIndex+1)+' closed. code='+ev.code+' - trying next server...');endpointIndex++;setTimeout(tryEndpoint,800)}
+}
 function connect(){
   let id = ($('appId').value||'').trim();
-  if(!/^[A-Za-z0-9]+$/.test(id)){ id='34VZgNqVNBMxr6yI4Y1nT'; $('appId').value=id; log('App ID was empty, using your App ID'); }
-  disconnect();
-  let url='wss://ws.derivws.com/websockets/v3?app_id='+encodeURIComponent(id);
-  log('Connecting with App ID: '+id);
-  try{ws=new WebSocket(url)}catch(e){setConn(false,'Could not create WebSocket');log('Connection error: '+e.message);return}
-  setConn(false,'Connecting to Deriv…');
-  ws.onopen=()=>{setConn(true,'Connected to Deriv public feed');log('WebSocket connected. Requesting selected market.');subscribe()};
-  ws.onmessage=e=>{let d;try{d=JSON.parse(e.data)}catch{return}if(d.error){log('Deriv error: '+d.error.message+' (code: '+(d.error.code||'?')+')');return}if(d.msg_type==='tick'&&d.tick){let p=Number(d.tick.quote);if(!Number.isFinite(p))return;ticks++;previous=prices.length?prices[prices.length-1]:p;prices.push(p);if(prices.length>80)prices.shift();$('price').textContent=p.toFixed(d.tick.pip_size??5);let delta=p-previous;$('tickChange').textContent=(delta>=0?'+':'')+delta.toFixed(d.tick.pip_size??5);$('tickChange').className=delta>=0?'up':'down';$('lastTick').textContent='Last tick: '+new Date().toLocaleTimeString()+' • '+ticks+' ticks received';$('checkTicks').textContent='✓ Receiving multiple ticks ('+ticks+')';draw();if(paper)paperTick(p)}if(d.subscription&&d.subscription.id)subId=d.subscription.id};
-  ws.onerror=()=>{setConn(false,'WebSocket error');log('WebSocket error. Check connection and app ID.')};
-  ws.onclose=(ev)=>{setConn(false,'Disconnected');log('WebSocket closed. code='+ev.code+' reason='+(ev.reason||'none'))}
+  if(!/^\d+$/.test(id)){ id='1089'; $('appId').value=id; log('App ID reset to 1089'); }
+  manualDisconnect=false; connecting=true; endpointIndex=0;
+  if(ws){try{ws.onclose=null;ws.close()}catch(e){}ws=null}
+  endpoints=[
+    'wss://ws.deriv.com/websockets/v3?app_id='+encodeURIComponent(id),
+    'wss://ws.derivws.com/websockets/v3?app_id='+encodeURIComponent(id),
+    'wss://ws.binaryws.com/websockets/v3?app_id='+encodeURIComponent(id)
+  ];
+  log('Connecting with App ID: '+id+' - will try 3 Deriv servers automatically');
+  tryEndpoint();
 }
-function disconnect(){if(ws){unsubscribe();try{ws.onclose=null;ws.close()}catch(e){}ws=null}setConn(false,'Not connected');}
+function disconnect(){manualDisconnect=true;connecting=false;if(ws){unsubscribe();try{ws.onclose=null;ws.close()}catch(e){}ws=null}setConn(false,'Not connected');}
 function paperTick(p){if(!window.lastPaperPrice){window.lastPaperPrice=p;return}let old=window.lastPaperPrice;window.lastPaperPrice=p;let diff=p-old;if(Math.abs(diff)<1e-12)return;let gain=diff>0?.01:-.01;balance=Math.max(0,balance+gain);paperTrades++;render();$('checkPaper').textContent='✓ Paper monitor has processed ticks';if(balance<=4){stopPaper();log('Paper loss limit reached; monitor stopped.')} }
 function startPaper(){if(!ws||mode!=='demo'||paper)return;paper=true;window.lastPaperPrice=Number($('price').textContent);$('paperStart').disabled=true;$('paperStop').disabled=false;log('Paper monitor started. Illustrative tick-direction scoring only; no orders placed.')}
 function stopPaper(){paper=false;$('paperStart').disabled=!ws||mode!=='demo';$('paperStop').disabled=true;log('Paper monitor stopped.')}
