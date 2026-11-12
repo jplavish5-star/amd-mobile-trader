@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>AMD Mobile Trader - FIXED</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:Arial,sans-serif}
+body{background:#0f1115;color:#fff;padding:12px;padding-bottom:80px}
+h1{font-size:20px;text-align:center;margin:8px 0}
+h1 span{color:#00e676}
+.card{background:#1a1d24;border-radius:14px;padding:14px;margin:10px 0}
+label{font-size:13px;color:#aaa;display:block;margin-bottom:6px}
+input,select{width:100%;padding:12px;border-radius:10px;border:1px solid #333;background:#0f1115;color:#fff;font-size:15px;margin-bottom:10px}
+button{width:100%;padding:14px;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;margin-top:6px}
+.btn-green{background:#00e676;color:#000}
+.btn-red{background:#ff1744;color:#fff}
+.btn-blue{background:#2962ff;color:#fff}
+.row{display:flex;gap:10px}
+.row>*{flex:1}
+#status{text-align:center;padding:10px;border-radius:10px;background:#222;font-size:14px;margin:10px 0}
+#price{font-size:36px;text-align:center;font-weight:800;margin:6px 0}
+#price small{font-size:14px;color:#aaa;display:block}
+#balance{font-size:18px;text-align:center;color:#00e676}
+#payout{font-size:13px;text-align:center;color:#aaa;margin-top:6px}
+#log{background:#000;border-radius:10px;padding:10px;font-size:12px;height:120px;overflow-y:auto;white-space:pre-wrap;color:#0f0}
+</style>
+</head>
+<body>
+<h1>AMD <span>MOBILE TRADER</span></h1>
+<div id="status">⚪ Disconnected - FIXED to use ws.derivws.com</div>
+
+<div class="card">
+<label>App ID</label>
+<input id="appId" value="1089">
+<label>Deriv API Token (from deriv.com > Account Settings > API Token)</label>
+<input id="token" placeholder="Paste token here - leave blank for demo ticks only">
+<button class="btn-blue" onclick="connect()">CONNECT</button>
+<div id="balance">Balance: --</div>
+</div>
+
+<div class="card">
+<div id="price">--<small id="symName">No symbol</small></div>
+<label>Market</label>
+<select id="symbol">
+<option value="R_100">Volatility 100 (1s) Index</option>
+<option value="R_75">Volatility 75 (1s) Index</option>
+<option value="R_50">Volatility 50 (1s) Index</option>
+<option value="R_25">Volatility 25 (1s) Index</option>
+<option value="R_10">Volatility 10 (1s) Index</option>
+<option value="1HZ100V">Volatility 100 Index</option>
+<option value="1HZ75V">Volatility 75 Index</option>
+<option value="frxEURUSD">EUR/USD</option>
+<option value="frxGBPUSD">GBP/USD</option>
+<option value="frxUSDJPY">USD/JPY</option>
+</select>
+<button class="btn-blue" onclick="subscribe()">GET LIVE PRICE</button>
+</div>
+
+<div class="card">
+<label>Stake (USD)</label>
+<input id="stake" type="number" value="1" min="0.35" step="0.1">
+<label>Duration (ticks)</label>
+<input id="duration" type="number" value="5" min="1" max="10">
+<div class="row">
+<button class="btn-green" onclick="buy('CALL')">▲ RISE</button>
+<button class="btn-red" onclick="buy('PUT')">▼ FALL</button>
+</div>
+<div id="payout">Payout will show after you connect</div>
+</div>
+
+<div class="card"><div id="log">Log:\nWaiting...\n</div></div>
+
+<script>
+let ws=null, currentPrice=0, activeSymbol="R_100";
+const ENDPOINTS=[
+"wss://ws.derivws.com/websockets/v3",
+"wss://frontend.derivws.com/websockets/v3",
+"wss://ws.binaryws.com/websockets/v3"
+];
+let epIndex=0;
+function log(m){let l=document.getElementById('log');l.textContent+="\n"+m;l.scrollTop=l.scrollHeight;}
+function setStatus(t,c){let s=document.getElementById('status');s.textContent=t;s.style.background=c;}
+function connect(){
+  let appId=document.getElementById('appId').value.trim()||"1089";
+  let token=document.getElementById('token').value.trim();
+  if(ws) try{ws.close()}catch(e){}
+  epIndex=0; tryConnect(appId,token);
+}
+function tryConnect(appId,token){
+  if(epIndex>=ENDPOINTS.length){setStatus("❌ All servers failed - try Psiphon VPN","#ff1744");log("All endpoints failed");return;}
+  let url=ENDPOINTS[epIndex]+"?app_id="+appId;
+  log("Trying: "+ENDPOINTS[epIndex]);
+  setStatus("🟡 Connecting to "+ENDPOINTS[epIndex],"#ff9800");
+  ws=new WebSocket(url);
+  ws.onopen=()=>{
+    log("✅ CONNECTED to "+ENDPOINTS[epIndex]);
+    setStatus("🟢 Connected to "+ENDPOINTS[epIndex],"#00c853");
+    if(token){
+      ws.send(JSON.stringify({authorize:token}));
+    } else {
+      subscribe();
+    }
+  };
+  ws.onmessage=(e)=>{
+    let d=JSON.parse(e.data);
+    if(d.error){log("Error: "+d.error.message);return;}
+    if(d.authorize){document.getElementById('balance').textContent="Balance: $"+d.authorize.balance+" ("+d.authorize.currency+")";log("Authorized: "+d.authorize.loginid);subscribe();return;}
+    if(d.tick){
+      currentPrice=d.tick.quote;
+      document.getElementById('price').innerHTML=currentPrice+"<small id='symName'>"+d.tick.symbol+" - LIVE</small>";
+    }
+    if(d.buy){log("✅ Trade Bought! ID: "+d.buy.contract_id+" Price: $"+d.buy.buy_price);checkResult(d.buy.contract_id);return;}
+    if(d.proposal_open_contract){
+      let c=d.proposal_open_contract;
+      if(c.is_sold){
+        log("🏁 RESULT: "+(c.status)+" Profit: $"+c.profit+" Payout: $"+c.payout);
+        document.getElementById('payout').textContent="Last Result: "+c.status+" Profit: $"+c.profit;
+      }
+    }
+  };
+  ws.onclose=(e)=>{
+    log("Closed code "+e.code+" - trying next server...");
+    epIndex++; setTimeout(()=>tryConnect(appId,token),800);
+  };
+  ws.onerror=()=>{log("Socket error on "+ENDPOINTS[epIndex]);};
+}
+function subscribe(){
+  activeSymbol=document.getElementById('symbol').value;
+  if(!ws||ws.readyState!==1){log("Not connected yet");return;}
+  ws.send(JSON.stringify({forget_all:"ticks"}));
+  ws.send(JSON.stringify({ticks:activeSymbol,subscribe:1}));
+  log("Subscribed to "+activeSymbol);
+}
+function buy(type){
+  let stake=parseFloat(document.getElementById('stake').value);
+  let dur=parseInt(document.getElementById('duration').value);
+  let token=document.getElementById('token').value.trim();
+  if(!token){alert("Paste your Deriv API Token first to trade real/demo money");return;}
+  if(!ws||ws.readyState!==1){alert("Not connected");return;}
+  log("Buying "+type+" "+activeSymbol+" Stake $"+stake+" Duration "+dur+" ticks");
+  ws.send(JSON.stringify({buy:1,price:stake,parameters:{amount:stake,basis:"stake",contract_type:type,currency:"USD",duration:dur,duration_unit:"t",symbol:activeSymbol}}));
+}
+function checkResult(id){
+  let iv=setInterval(()=>{
+    if(ws&&ws.readyState===1) ws.send(JSON.stringify({proposal_open_contract:1,contract_id:id,subscribe:1}));
+  },1000);
+  setTimeout(()=>clearInterval(iv),30000);
+}
+</script>
+</body>
+  </html>
