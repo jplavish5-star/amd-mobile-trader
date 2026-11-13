@@ -39,7 +39,7 @@
 </div>
 <div class="card">
 <label for="stake">Stake (account currency)</label><input id="stake" type="number" value="0.35" min="0.35" step="0.01">
-<label for="duration">Contract duration</label><select id="duration"><option value="5t" selected>5 ticks · Fast</option><option value="10t">10 ticks · Balanced</option><option value="15t">15 ticks · Longer</option></select><p id="marketNote" class="muted">Synthetic markets: tick-duration contracts. Gold: 5-minute minimum; market hours apply.</p>
+<label for="duration">Contract duration</label><select id="duration"><option value="5m" selected>5 minutes</option><option value="10m">10 minutes</option><option value="15m">15 minutes</option></select><p id="marketNote" class="muted">Gold and Forex: minute-based options from 5 minutes. Market hours apply.</p>
 <div class="row"><button class="green" id="callBtn" onclick="requestTrade('RISE')" disabled>▲ RISE</button><button class="red" id="putBtn" onclick="requestTrade('FALL')" disabled>▼ FALL</button></div>
 <div id="tradeStatus" class="muted" style="margin-top:10px">Connect and authorize a Demo or Real account to enable trading.</div>
 </div>
