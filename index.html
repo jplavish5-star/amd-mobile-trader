@@ -47,7 +47,7 @@
 <div class="card"><div id="log">Activity log\nWaiting for connection…</div></div>
 <script>
 let ws=null, mode='demo', authorized=false, currency='USD', tickSubId=null, contractSubs=new Set(), pendingProposal=null;
-let autoRunning=false,tradeInProgress=false,activeContractId=null,activeTradeMarket='Synthetic',marketStats={Gold:{wins:0,losses:0},Synthetic:{wins:0,losses:0}},priceHistory=[],autoCooldown=0,sessionStartBalance=null,currentBalance=null,accountBalance=null,sessionPL=0,wins=0,losses=0,consecutiveLosses=0,settledContractIds=new Set(),alertsEnabled=false,sessionStartedAt=null,lastTradeSummary='No completed trades yet';
+let autoRunning=false,tradeInProgress=false,activeContractId=null,activeTradeMarket='Synthetic',marketStats={Gold:{wins:0,losses:0},Synthetic:{wins:0,losses:0}},priceHistory=[],activeMinute=null,activeMinuteClose=null,autoCooldown=0,sessionStartBalance=null,currentBalance=null,accountBalance=null,sessionPL=0,wins=0,losses=0,consecutiveLosses=0,settledContractIds=new Set(),alertsEnabled=false,sessionStartedAt=null,lastTradeSummary='No completed trades yet';
 const $=id=>document.getElementById(id);
 function log(message){const el=$('log');el.textContent+='\n'+new Date().toLocaleTimeString()+'  '+message;el.scrollTop=el.scrollHeight}
 function toggleAlerts(){alertsEnabled=!alertsEnabled;$('alertToggle').textContent=alertsEnabled?'SOUND ALERTS ON':'ENABLE SOUND ALERTS';$('alertStatus').textContent=alertsEnabled?'A short sound will play when a trade settles. Keep this page open.':'Sound alerts are off.';if(alertsEnabled)playAlert();}
@@ -129,7 +129,11 @@ async function connect(){
     currency=data.balance.currency||currency;
     accountBalance=Number(data.balance.balance);$('balance').textContent='Deriv DEMO balance: '+accountBalance.toFixed(2)+' '+currency+' · '+(account.loginid||account.id);$('currentBalance').textContent=currentBalance.toFixed(2)+' '+currency;$('initialBalance').textContent=sessionStartBalance.toFixed(2)+' '+currency;updateAutoUI();
    }
-   if(data.msg_type==='tick'&&data.tick){if(data.tick.symbol!==$('symbol').value)return;if(data.subscription&&data.subscription.id)tickSubId=data.subscription.id;const quote=Number(data.tick.quote);$('price').innerHTML=quote.toLocaleString(undefined,{maximumFractionDigits:8})+'<small>'+data.tick.symbol+' · LIVE</small>';onMarketTick(quote);}
+   if(data.msg_type==='candles'&&data.echo_req?.ticks_history===$('symbol').value&&Array.isArray(data.candles)){
+    const rows=data.candles.filter(x=>Number.isFinite(Number(x.close))&&Number.isFinite(Number(x.epoch)));
+    if(rows.length){priceHistory=rows.slice(0,-1).map(x=>Number(x.close)).slice(-160);const last=rows[rows.length-1];activeMinute=Math.floor(Number(last.epoch)/60);activeMinuteClose=Number(last.close);log('Loaded '+priceHistory.length+' completed 1-minute candles for the shared strategy.');}
+   }
+   if(data.msg_type==='tick'&&data.tick){if(data.tick.symbol!==$('symbol').value)return;if(data.subscription&&data.subscription.id)tickSubId=data.subscription.id;const quote=Number(data.tick.quote);$('price').innerHTML=quote.toLocaleString(undefined,{maximumFractionDigits:8})+'<small>'+data.tick.symbol+' · LIVE</small>';onMarketTick(quote,Number(data.tick.epoch)||Date.now()/1000);}
    if(data.msg_type==='proposal'&&data.proposal&&pendingProposal){
     const trade=pendingProposal;pendingProposal=null;
     log('Quote received. Buying '+trade.direction+'…');
@@ -169,8 +173,10 @@ function subscribeTicks(){
  if(!ws||ws.readyState!==1){log('Connect first to receive market data.');return;}
  const symbol=$('symbol').value;
  if(tickSubId)ws.send(JSON.stringify({forget:tickSubId}));
+ activeMinute=null;activeMinuteClose=null;priceHistory=[];
+ ws.send(JSON.stringify({ticks_history:symbol,count:100,end:'latest',style:'candles',granularity:60,req_id:31}));
  ws.send(JSON.stringify({ticks:symbol,subscribe:1}));
- $('symName').textContent=symbol+' · requesting live price';log('Requested live ticks for '+symbol+'.');
+ $('symName').textContent=symbol+' · loading 1-minute history';log('Requested 1-minute candle history and live ticks for '+symbol+'.');
 }
 function requestTrade(direction){
  if(!authorized||!ws||ws.readyState!==1){alert('Connect and authorize the selected account first.');return;}
@@ -196,23 +202,31 @@ function startAuto(){
  if(mode!=='demo'){alert('Automatic scalping is locked to DEMO during testing.');return;}
  if(!authorized||!ws||ws.readyState!==1){alert('Connect your Demo account first.');return;}
  if(sessionStartBalance===null||!Number.isFinite(sessionStartBalance)){alert('Choose a $10 or $15 virtual starting balance and reconnect.');return;}
- autoRunning=true;autoCooldown=12;priceHistory=[];updateAutoUI('AUTO ON · Collecting live ticks before first signal.');log('DEMO AUTO SCALPER STARTED · Shared EMA 20/50 + RSI(14) pullback strategy · '+$('duration').value+' · stake '+$('stake').value+'.');setTradeEnabled(true);
+ autoRunning=true;autoCooldown=1;updateAutoUI('AUTO ON · Waiting for completed 1-minute candles and a confirmed setup.');log('DEMO AUTO SCALPER STARTED · Shared EMA 20/50 + RSI(14) pullback strategy · '+$('duration').value+' · stake '+$('stake').value+'.');setTradeEnabled(true);
 }
 function stopAuto(reason){autoRunning=false;updateAutoUI(reason||'AUTO OFF · No new trades will be opened.');log(reason||'Auto scalper stopped.');setTradeEnabled(authorized);}
 function calcRsi(v,p=14){if(v.length<p+1)return null;let g=0,l=0;for(let i=v.length-p;i<v.length;i++){const d=v[i]-v[i-1];if(d>0)g+=d;else l-=d;}if(l===0)return 100;if(g===0)return 0;const rs=g/l;return 100-(100/(1+rs));}
 function ema(v,p){const k=2/(p+1);let x=v[0];for(let i=1;i<v.length;i++)x=v[i]*k+x*(1-k);return x;}
-function onMarketTick(price){
- if(!Number.isFinite(price)||price<=0)return;priceHistory.push(price);if(priceHistory.length>240)priceHistory.shift();
- if(autoCooldown>0)autoCooldown--;
+function evaluateStrategy(){
  if(!autoRunning||tradeInProgress||autoCooldown>0||priceHistory.length<60)return;
- const v=priceHistory.slice(-100),fast=ema(v,20),slow=ema(v,50),rsi=calcRsi(priceHistory,14);if(rsi===null)return;
- const recent=priceHistory.slice(-20),range=(Math.max(...recent)-Math.min(...recent))/price;
+ const v=priceHistory.slice(-100),price=v[v.length-1],fast=ema(v,20),slow=ema(v,50),rsi=calcRsi(v,14);if(rsi===null)return;
+ const recent=v.slice(-20),range=(Math.max(...recent)-Math.min(...recent))/price;
  if(range>0.0035||range<0.000002)return;
- const pullbackWindow=priceHistory.slice(-9,-1),hadDipBelow=pullbackWindow.some(x=>x<=fast),hadPopAbove=pullbackWindow.some(x=>x>=fast);
+ const pullbackWindow=v.slice(-9,-1),hadDipBelow=pullbackWindow.some(x=>x<=fast),hadPopAbove=pullbackWindow.some(x=>x>=fast);
  let d=null;
  if(fast>slow&&price>fast&&hadDipBelow&&rsi>=52&&rsi<=67)d='RISE';
  else if(fast<slow&&price<fast&&hadPopAbove&&rsi>=33&&rsi<=48)d='FALL';
- if(d){log('CONFIRMED PULLBACK SIGNAL '+d+' · EMA20/50 aligned · RSI '+rsi.toFixed(1)+' · volatility '+(range*100).toFixed(3)+'%');requestTrade(d);}
+ if(d){log('1-MIN CANDLE SIGNAL '+d+' · EMA20/50 aligned · RSI '+rsi.toFixed(1)+' · volatility '+(range*100).toFixed(3)+'%');requestTrade(d);}
+}
+function onMarketTick(price,epoch){
+ if(!Number.isFinite(price)||price<=0)return;
+ const minute=Math.floor(epoch/60);
+ if(activeMinute===null){activeMinute=minute;activeMinuteClose=price;return;}
+ if(minute!==activeMinute){
+  if(activeMinuteClose!==null){priceHistory.push(activeMinuteClose);if(priceHistory.length>160)priceHistory.shift();if(autoCooldown>0)autoCooldown--;evaluateStrategy();}
+  activeMinute=minute;
+ }
+ activeMinuteClose=price;
 }
 
 $('symbol').addEventListener('change',()=>{updateMarketSettings();if(ws&&ws.readyState===1)subscribeTicks();});
