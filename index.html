@@ -33,17 +33,17 @@
 <div id="price">--<small id="symName">Waiting for market data</small></div>
 <label for="symbol">Market</label>
 <select id="symbol">
-<option value="R_100">Volatility 100 Index</option><option value="R_75">Volatility 75 Index</option><option value="R_50">Volatility 50 Index</option><option value="R_25">Volatility 25 Index</option><option value="R_10">Volatility 10 Index</option><option value="1HZ100V">Volatility 100 (1s) Index</option><option value="1HZ75V">Volatility 75 (1s) Index</option><option value="frxEURUSD">EUR/USD</option><option value="frxGBPUSD">GBP/USD</option><option value="frxUSDJPY">USD/JPY</option>
+<option value="R_100">Volatility 100 Index</option><option value="R_75">Volatility 75 Index</option><option value="R_50">Volatility 50 Index</option><option value="R_25">Volatility 25 Index</option><option value="R_10">Volatility 10 Index</option><option value="1HZ100V">Volatility 100 (1s) Index</option><option value="1HZ75V">Volatility 75 (1s) Index</option><option value="frxXAUUSD">Gold / USD</option><option value="frxEURUSD">EUR/USD</option><option value="frxGBPUSD">GBP/USD</option><option value="frxUSDJPY">USD/JPY</option>
 </select>
 <button class="blue full" onclick="subscribeTicks()">GET LIVE PRICE</button>
 </div>
 <div class="card">
 <label for="stake">Stake (account currency)</label><input id="stake" type="number" value="0.35" min="0.35" step="0.01">
-<label for="duration">Scalp duration (ticks)</label><select id="duration"><option value="5" selected>5 ticks · Fast</option><option value="10">10 ticks · Balanced</option><option value="15">15 ticks · Longer scalp</option></select>
-<div class="row"><button class="green" id="callBtn" onclick="requestTrade('CALL')" disabled>▲ RISE</button><button class="red" id="putBtn" onclick="requestTrade('PUT')" disabled>▼ FALL</button></div>
+<label for="duration">Contract duration</label><select id="duration"><option value="5t" selected>5 ticks · Fast</option><option value="10t">10 ticks · Balanced</option><option value="15t">15 ticks · Longer</option></select><p id="marketNote" class="muted">Synthetic markets: tick-duration contracts. Gold: 5-minute minimum; market hours apply.</p>
+<div class="row"><button class="green" id="callBtn" onclick="requestTrade('RISE')" disabled>▲ RISE</button><button class="red" id="putBtn" onclick="requestTrade('FALL')" disabled>▼ FALL</button></div>
 <div id="tradeStatus" class="muted" style="margin-top:10px">Connect and authorize a Demo or Real account to enable trading.</div>
 </div>
-<div class="card"><h3 style="margin:0 0 8px">AMD Auto Scalper</h3><div class="muted">EMA 5/13 trend + RSI(14) confirmation. Select 5, 10 or 15 tick contracts. Trades only when a signal appears.</div><div class="row"><button class="green" id="autoStart" onclick="startAuto()" disabled>START AUTO</button><button class="red" id="autoStop" onclick="stopAuto()" disabled>STOP AUTO</button></div><div id="autoState" class="muted" style="margin-top:9px">Automation is OFF. Connect a DEMO account first.</div><div id="autoStats" class="muted" style="margin-top:7px">Session P/L: 0.00 · Wins: 0 · Losses: 0</div><div class="muted" style="margin-top:8px">Fixed 0.35 stake, one open contract, 12-tick cooldown, stop after 2 consecutive losses or 7% session drawdown. No martingale. Test in DEMO only.</div></div>
+<div class="card"><h3 style="margin:0 0 8px">AMD Auto Scalper</h3><div class="muted">Shared strategy for Gold and synthetics: EMA 20/50 trend, RSI(14) momentum, EMA20 pullback/reclaim confirmation and a volatility filter. Gold uses minute contracts; synthetics use tick contracts. Signals are selective, not guaranteed.</div><div class="row"><button class="green" id="autoStart" onclick="startAuto()" disabled>START AUTO</button><button class="red" id="autoStop" onclick="stopAuto()" disabled>STOP AUTO</button></div><div id="autoState" class="muted" style="margin-top:9px">Automation is OFF. Connect a DEMO account first.</div><div id="autoStats" class="muted" style="margin-top:7px">Session P/L: 0.00 · Wins: 0 · Losses: 0</div><div class="muted" style="margin-top:8px">Fixed 0.35 stake, one open contract, 12-tick cooldown, stop after 2 consecutive losses or 7% session drawdown. No martingale. Test in DEMO only.</div></div>
 <div class="card"><div id="log">Activity log\nWaiting for connection…</div></div>
 <script>
 let ws=null, mode='demo', authorized=false, currency='USD', tickSubId=null, contractSubs=new Set(), pendingProposal=null;
@@ -153,6 +153,18 @@ async function connect(){
   const message=error?.message||'Unknown connection error';log(message);$('tradeStatus').textContent=message;
  }finally{$('connectBtn').disabled=false;}
 }
+function isGold(){return $('symbol').value==='frxXAUUSD';}
+function updateMarketSettings(){
+ const gold=isGold(),sel=$('duration'),current=sel.value;
+ const choices=gold?[['5m','5 minutes · Gold minimum'],['10m','10 minutes'],['15m','15 minutes']]:[['5t','5 ticks · Fast'],['10t','10 ticks · Balanced'],['15t','15 ticks · Longer']];
+ sel.innerHTML=choices.map(x=>'<option value="'+x[0]+'">'+x[1]+'</option>').join('');
+ sel.value=choices.some(x=>x[0]===current)?current:choices[0][0];
+ $('marketNote').textContent=gold?'Gold / USD (frxXAUUSD): use minute contracts from 5 minutes. Gold follows market hours and may be unavailable on weekends.':'Synthetic markets: use tick-duration contracts. They are generally available 24/7.';
+ $('stake').min=gold?'1':'0.35';
+ if(gold&&Number($('stake').value)<1)$('stake').value='1.00';
+ if(!gold&&Number($('stake').value)<0.35)$('stake').value='0.35';
+ priceHistory=[];
+}
 function subscribeTicks(){
  if(!ws||ws.readyState!==1){log('Connect first to receive market data.');return;}
  const symbol=$('symbol').value;
@@ -163,13 +175,15 @@ function subscribeTicks(){
 function requestTrade(direction){
  if(!authorized||!ws||ws.readyState!==1){alert('Connect and authorize the selected account first.');return;}
  if(mode==='real'&&!confirm('Confirm REAL MONEY trade: '+direction+' '+$('symbol').value+' with stake '+$('stake').value+' '+currency+'?'))return;
- const stake=Number($('stake').value),duration=Number($('duration').value);
+ const stake=Number($('stake').value),durationValue=$('duration').value,unit=durationValue.endsWith('m')?'m':'t',duration=Number(durationValue.slice(0,-1));
  if(!Number.isFinite(stake)||stake<=0){alert('Enter a valid stake.');return;}
- if(!Number.isInteger(duration)||duration<1||duration>10){alert('Duration must be 1–10 ticks.');return;}
+ if(isGold()&&stake<1){alert('Gold options require at least 1 unit of stake on this setup.');return;}
+ if(!Number.isInteger(duration)||duration<1||(unit==='t'&&duration>15)||(unit==='m'&&duration<5)){alert('Invalid duration for the selected market.');return;}
  if(pendingProposal){alert('A trade quote is already being processed. Please wait.');return;}
+ const contractType=direction==='RISE'?'PUT':'CALL';
  const trade={direction,stake};pendingProposal=trade;
- $('tradeStatus').textContent='Requesting a price quote…';log('Requesting '+direction+' proposal: '+stake+' '+currency+', '+duration+' ticks.');
- ws.send(JSON.stringify({proposal:1,amount:stake,basis:'stake',contract_type:direction,currency,duration,duration_unit:'t',subscribe:1,underlying_symbol:$('symbol').value}));
+ $('tradeStatus').textContent='Requesting a price quote…';log('Requesting '+direction+' proposal: '+stake+' '+currency+', '+duration+' '+(unit==='m'?'minutes':'ticks')+'.');
+ ws.send(JSON.stringify({proposal:1,amount:stake,basis:'stake',contract_type:contractType,currency,duration,duration_unit:unit,subscribe:1,underlying_symbol:$('symbol').value}));
 }
 
 function updateAutoUI(message){
@@ -182,20 +196,27 @@ function startAuto(){
  if(mode!=='demo'){alert('Automatic scalping is locked to DEMO during testing.');return;}
  if(!authorized||!ws||ws.readyState!==1){alert('Connect your Demo account first.');return;}
  if(sessionStartBalance===null||!Number.isFinite(sessionStartBalance)){alert('Choose a $10 or $15 virtual starting balance and reconnect.');return;}
- autoRunning=true;autoCooldown=12;priceHistory=[];updateAutoUI('AUTO ON · Collecting live ticks before first signal.');log('DEMO AUTO SCALPER STARTED · EMA 5/13 + RSI(14) · '+$('duration').value+' ticks · fixed 0.35 stake.');setTradeEnabled(true);
+ autoRunning=true;autoCooldown=12;priceHistory=[];updateAutoUI('AUTO ON · Collecting live ticks before first signal.');log('DEMO AUTO SCALPER STARTED · Shared EMA 20/50 + RSI(14) pullback strategy · '+$('duration').value+' · stake '+$('stake').value+'.');setTradeEnabled(true);
 }
 function stopAuto(reason){autoRunning=false;updateAutoUI(reason||'AUTO OFF · No new trades will be opened.');log(reason||'Auto scalper stopped.');setTradeEnabled(authorized);}
-function calcRsi(v,p=14){if(v.length<p+1)return null;let g=0,l=0;for(let i=v.length-p;i<v.length;i++){const d=v[i]-v[i-1];if(d>0)g+=d;else l-=d;}if(l===0)return 100;const rs=g/l;return 100-(100/(1+rs));}
+function calcRsi(v,p=14){if(v.length<p+1)return null;let g=0,l=0;for(let i=v.length-p;i<v.length;i++){const d=v[i]-v[i-1];if(d>0)g+=d;else l-=d;}if(l===0)return 100;if(g===0)return 0;const rs=g/l;return 100-(100/(1+rs));}
 function ema(v,p){const k=2/(p+1);let x=v[0];for(let i=1;i<v.length;i++)x=v[i]*k+x*(1-k);return x;}
 function onMarketTick(price){
- if(!Number.isFinite(price)||price<=0)return;priceHistory.push(price);if(priceHistory.length>80)priceHistory.shift();
+ if(!Number.isFinite(price)||price<=0)return;priceHistory.push(price);if(priceHistory.length>240)priceHistory.shift();
  if(autoCooldown>0)autoCooldown--;
- if(!autoRunning||tradeInProgress||autoCooldown>0||priceHistory.length<30)return;
- const v=priceHistory.slice(-30),fast=ema(v,5),slow=ema(v,13),rsi=calcRsi(priceHistory,14);if(rsi===null)return;
- let d=null;if(fast>slow&&rsi>=55&&rsi<=68)d='CALL';else if(fast<slow&&rsi<=45&&rsi>=32)d='PUT';
- if(d){log('SCALP SIGNAL '+d+' · RSI '+rsi.toFixed(1));requestTrade(d);}
+ if(!autoRunning||tradeInProgress||autoCooldown>0||priceHistory.length<60)return;
+ const v=priceHistory.slice(-100),fast=ema(v,20),slow=ema(v,50),rsi=calcRsi(priceHistory,14);if(rsi===null)return;
+ const recent=priceHistory.slice(-20),range=(Math.max(...recent)-Math.min(...recent))/price;
+ if(range>0.0035||range<0.000002)return;
+ const pullbackWindow=priceHistory.slice(-9,-1),hadDipBelow=pullbackWindow.some(x=>x<=fast),hadPopAbove=pullbackWindow.some(x=>x>=fast);
+ let d=null;
+ if(fast>slow&&price>fast&&hadDipBelow&&rsi>=52&&rsi<=67)d='RISE';
+ else if(fast<slow&&price<fast&&hadPopAbove&&rsi>=33&&rsi<=48)d='FALL';
+ if(d){log('CONFIRMED PULLBACK SIGNAL '+d+' · EMA20/50 aligned · RSI '+rsi.toFixed(1)+' · volatility '+(range*100).toFixed(3)+'%');requestTrade(d);}
 }
 
+$('symbol').addEventListener('change',()=>{updateMarketSettings();if(ws&&ws.readyState===1)subscribeTicks();});
+updateMarketSettings();
 window.addEventListener('beforeunload',()=>{if(ws)ws.close();});
 </script>
 </body>
