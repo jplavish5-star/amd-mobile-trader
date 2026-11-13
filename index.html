@@ -66,7 +66,7 @@ function setMode(next){
  log('Mode changed to '+mode.toUpperCase()+'. Reconnect to authorize this account.');
 }
 function disconnect(showLog=true){
- autoRunning=false;tradeInProgress=false;activeContractId=null;updateAutoUI();
+ autoRunning=false;if(tradeInProgress||activeContractId!==null){$('dashboardStatus').textContent='Connection interrupted during a trade. Reconnect and let the bot reconcile open positions before trusting session totals.';}updateAutoUI();
  if(ws){const old=ws;ws=null;old.onclose=null;try{old.close();}catch(e){}}
  authorized=false;tickSubId=null;contractSubs.clear();marketDataReady=false;marketClosed=false;setTradeEnabled(false);
  $('virtualStart').disabled=false;
@@ -119,6 +119,7 @@ async function connect(){
    $('tradeStatus').textContent='Secure '+mode.toUpperCase()+' connection established. Trades use '+currency+'.';
    log('Secure WebSocket connected. Requesting balance and market data…');
    socket.send(JSON.stringify({balance:1,subscribe:1,req_id:1}));
+   socket.send(JSON.stringify({portfolio:1,req_id:2}));
    subscribeTicks();
   };
   socket.onmessage=event=>{
@@ -127,7 +128,12 @@ async function connect(){
    if(data.error){const msg=data.error.message||'Unknown API error';log('Deriv API error: '+msg);$('tradeStatus').textContent=msg;if(/market.*closed|closed.*market|market is presently closed/i.test(msg)){marketClosed=true;marketDataReady=false;stopAuto('AUTO BLOCKED · This market is closed. Select an open market and press GET LIVE PRICE.');status('⚠️ Selected market is closed','#65420e');setTradeEnabled(false);}if(data.msg_type==='proposal'||data.msg_type==='buy'){pendingProposal=null;tradeInProgress=false;autoCooldown=2;}return;}
    if(data.msg_type==='balance'&&data.balance){
     currency=data.balance.currency||currency;
-    accountBalance=Number(data.balance.balance);$('balance').textContent='Deriv DEMO balance: '+accountBalance.toFixed(2)+' '+currency+' · '+(account.loginid||account.id);$('currentBalance').textContent=currentBalance.toFixed(2)+' '+currency;$('initialBalance').textContent=sessionStartBalance.toFixed(2)+' '+currency;updateAutoUI();
+    accountBalance=Number(data.balance.balance);$('balance').textContent='Deriv '+mode.toUpperCase()+' balance: '+accountBalance.toFixed(2)+' '+currency+' · '+(account.loginid||account.id);$('currentBalance').textContent=currentBalance.toFixed(2)+' '+currency;$('initialBalance').textContent=sessionStartBalance.toFixed(2)+' '+currency;updateAutoUI();
+   }
+   if(data.msg_type==='portfolio'&&data.portfolio&&Array.isArray(data.portfolio.contracts)){
+    const open=data.portfolio.contracts;
+    if(open.length){log('Reconnect recovery: found '+open.length+' open contract(s). Resubscribing to their results.');open.forEach(item=>{const id=Number(item.contract_id);if(Number.isFinite(id)){activeContractId=id;tradeInProgress=true;activeTradeMarket=String(item.underlying_symbol||'').toLowerCase().includes('xau')?'Gold':'Forex';socket.send(JSON.stringify({proposal_open_contract:1,contract_id:id,subscribe:1}));}});}
+    else if(activeContractId!==null){log('Reconnect recovery: Deriv reports no open positions; previous session result may need manual reconciliation.');activeContractId=null;tradeInProgress=false;}
    }
    if(data.msg_type==='candles'&&data.echo_req?.ticks_history===$('symbol').value&&Array.isArray(data.candles)){
     const rows=data.candles.filter(x=>Number.isFinite(Number(x.close))&&Number.isFinite(Number(x.epoch)));
@@ -136,8 +142,15 @@ async function connect(){
    if(data.msg_type==='tick'&&data.tick){if(data.tick.symbol!==$('symbol').value)return;if(data.subscription&&data.subscription.id)tickSubId=data.subscription.id;const quote=Number(data.tick.quote);marketDataReady=true;marketClosed=false;setTradeEnabled(authorized);$('price').innerHTML=quote.toLocaleString(undefined,{maximumFractionDigits:8})+'<small>'+data.tick.symbol+' · LIVE</small>';if(!$('tradeStatus').textContent.includes('Trade opened'))$('tradeStatus').textContent='Live market data received. Trading controls are available.';onMarketTick(quote,Number(data.tick.epoch)||Date.now()/1000);}
    if(data.msg_type==='proposal'&&data.proposal&&pendingProposal){
     const trade=pendingProposal;pendingProposal=null;
-    log('Quote received. Buying '+trade.direction+'…');
-    socket.send(JSON.stringify({buy:data.proposal.id,price:Number(data.proposal.ask_price||trade.stake)}));
+    const ask=Number(data.proposal.ask_price),payout=Number(data.proposal.payout);
+    if(!Number.isFinite(ask)||!Number.isFinite(payout)||ask<=0||payout<=ask){
+     tradeInProgress=false;autoCooldown=2;
+     const note='Quote rejected: payout does not exceed the stake, or quote values are invalid.';
+     $('tradeStatus').textContent=note;log(note);updateAutoUI();return;
+    }
+    const payoutMultiple=payout/ask,breakEven=(ask/payout)*100;
+    log('Quote checked · payout '+payout.toFixed(2)+' / stake '+ask.toFixed(2)+' · break-even win rate '+breakEven.toFixed(1)+'%.');
+    socket.send(JSON.stringify({buy:data.proposal.id,price:ask}));
    }
    if(data.msg_type==='buy'&&data.buy){
     activeContractId=data.buy.contract_id;
@@ -151,7 +164,7 @@ async function connect(){
    }
   };
   socket.onerror=()=>{if(ws===socket){status('❌ WebSocket connection error','#641f2a');log('Secure WebSocket connection failed. Check your network and try again.');}};
-  socket.onclose=event=>{if(ws===socket){ws=null;authorized=false;autoRunning=false;tradeInProgress=false;updateAutoUI(marketClosed?'AUTO BLOCKED · Selected market is closed. Reconnect and choose an open market.':'Automation stopped because the connection closed.');setTradeEnabled(false);status(marketClosed?'⚠️ Market closed · disconnected':'⚪ Disconnected',marketClosed?'#65420e':'#252a33');$('tradeStatus').textContent=marketClosed?'Gold is closed. Choose an open Forex pair, reconnect, then press GET LIVE PRICE.':'Disconnected. Reconnect to trade.';log('Connection closed (code '+event.code+').'+(marketClosed?' Market closure was reported immediately before disconnect.':''));}};
+  socket.onclose=event=>{if(ws===socket){ws=null;authorized=false;autoRunning=false;if(tradeInProgress||activeContractId!==null){$('dashboardStatus').textContent='WARNING: connection dropped during an open trade. Reconnect to recover its settlement; session totals may be incomplete until reconciled.';}updateAutoUI(marketClosed?'AUTO BLOCKED · Selected market is closed. Reconnect and choose an open market.':'Automation stopped because the connection closed.');setTradeEnabled(false);status(marketClosed?'⚠️ Market closed · disconnected':'⚪ Disconnected',marketClosed?'#65420e':'#252a33');$('tradeStatus').textContent=marketClosed?'Gold is closed. Choose an open Forex pair, reconnect, then press GET LIVE PRICE.':'Disconnected. Reconnect to trade.';log('Connection closed (code '+event.code+').'+(marketClosed?' Market closure was reported immediately before disconnect.':''));}};
  }catch(error){
   authorized=false;setTradeEnabled(false);status('❌ Connection failed','#641f2a');
   const message=error?.message||'Unknown connection error';log(message);$('tradeStatus').textContent=message;
@@ -164,8 +177,8 @@ function updateMarketSettings(){
  sel.innerHTML=choices.map(x=>'<option value="'+x[0]+'">'+x[1]+'</option>').join('');
  sel.value=choices.some(x=>x[0]===current)?current:choices[0][0];
  $('marketNote').textContent=gold?'Gold / USD: minute-based options from 5 minutes. Gold follows market hours and may be unavailable on weekends.':'Forex: minute-based options from 5 minutes. Trading follows the currency pair market session and closes on weekends.';
- $('stake').min='1';
- if(Number($('stake').value)<1)$('stake').value='1.00';
+ $('stake').min='0.35';
+ if(!Number.isFinite(Number($('stake').value))||Number($('stake').value)<0.35)$('stake').value='0.35';
  priceHistory=[];activeMinute=null;activeMinuteClose=null;
 }
 function subscribeTicks(){
@@ -179,13 +192,14 @@ function subscribeTicks(){
 }
 function requestTrade(direction){
  if(!authorized||!ws||ws.readyState!==1){alert('Connect and authorize the selected account first.');return;}
+ if(!marketDataReady||marketClosed){alert('No live price is available for this market. Wait for a live tick before trading.');return;}
  if(mode==='real'&&!confirm('Confirm REAL MONEY trade: '+direction+' '+$('symbol').value+' with stake '+$('stake').value+' '+currency+'?'))return;
  const stake=Number($('stake').value),durationValue=$('duration').value,unit=durationValue.endsWith('m')?'m':'t',duration=Number(durationValue.slice(0,-1));
  if(!Number.isFinite(stake)||stake<=0){alert('Enter a valid stake.');return;}
- if(stake<1){alert('Gold and Forex options require at least 1 unit of stake in this setup. Confirm the quote before trading.');return;}
+ if(stake<0.35){alert('Enter a stake of at least 0.35. Deriv will confirm the actual minimum in its quote.');return;}
  if(!Number.isInteger(duration)||duration<1||(unit==='t'&&duration>15)||(unit==='m'&&duration<5)){alert('Invalid duration for the selected market.');return;}
  if(pendingProposal){alert('A trade quote is already being processed. Please wait.');return;}
- const contractType=direction==='RISE'?'PUT':'CALL';
+ const contractType=direction==='RISE'?'CALL':'PUT';
  const trade={direction,stake};pendingProposal=trade;tradeInProgress=true;activeTradeMarket=isGold()?'Gold':'Forex';
  $('tradeStatus').textContent='Requesting a price quote…';log('Requesting '+direction+' proposal: '+stake+' '+currency+', '+duration+' '+(unit==='m'?'minutes':'ticks')+'.');
  ws.send(JSON.stringify({proposal:1,amount:stake,basis:'stake',contract_type:contractType,currency,duration,duration_unit:unit,subscribe:1,underlying_symbol:$('symbol').value}));
@@ -205,20 +219,42 @@ function startAuto(){
  autoRunning=true;autoCooldown=1;updateAutoUI('AUTO ON · Waiting for completed 1-minute candles and a confirmed setup.');log('DEMO AUTO SCALPER STARTED · Shared EMA 20/50 + RSI(14) pullback strategy · '+$('duration').value+' · stake '+$('stake').value+'.');setTradeEnabled(true);
 }
 function stopAuto(reason){autoRunning=false;updateAutoUI(reason||'AUTO OFF · No new trades will be opened.');log(reason||'Auto scalper stopped.');setTradeEnabled(authorized);}
-function calcRsi(v,p=14){if(v.length<p+1)return null;let g=0,l=0;for(let i=v.length-p;i<v.length;i++){const d=v[i]-v[i-1];if(d>0)g+=d;else l-=d;}if(l===0)return 100;if(g===0)return 0;const rs=g/l;return 100-(100/(1+rs));}
-function ema(v,p){const k=2/(p+1);let x=v[0];for(let i=1;i<v.length;i++)x=v[i]*k+x*(1-k);return x;}
+function calcRsi(v,p=14){
+ if(v.length<p+1)return null;
+ let gain=0,loss=0;
+ for(let i=1;i<=p;i++){const d=v[i]-v[i-1];if(d>0)gain+=d;else loss-=d;}
+ let avgGain=gain/p,avgLoss=loss/p;
+ for(let i=p+1;i<v.length;i++){const d=v[i]-v[i-1];avgGain=(avgGain*(p-1)+Math.max(d,0))/p;avgLoss=(avgLoss*(p-1)+Math.max(-d,0))/p;}
+ if(avgLoss===0)return avgGain===0?50:100;
+ if(avgGain===0)return 0;
+ const rs=avgGain/avgLoss;return 100-(100/(1+rs));
+}
+function emaSeries(v,p){
+ const out=[];if(!v.length)return out;
+ const k=2/(p+1);let x=v[0];out.push(x);
+ for(let i=1;i<v.length;i++){x=v[i]*k+x*(1-k);out.push(x);}
+ return out;
+}
+function ema(v,p){const s=emaSeries(v,p);return s.length?s[s.length-1]:null;}
 function evaluateStrategy(){
- if(!autoRunning||tradeInProgress||autoCooldown>0||priceHistory.length<60)return;
- const v=priceHistory.slice(-100),price=v[v.length-1],fast=ema(v,20),slow=ema(v,50),rsi=calcRsi(v,14);if(rsi===null)return;
+ if(!autoRunning||tradeInProgress||pendingProposal||autoCooldown>0||priceHistory.length<60)return;
+ const v=priceHistory.slice(-100),price=v[v.length-1],fastSeries=emaSeries(v,20),slowSeries=emaSeries(v,50),fast=fastSeries[fastSeries.length-1],slow=slowSeries[slowSeries.length-1],rsi=calcRsi(v,14);
+ if(rsi===null||!Number.isFinite(fast)||!Number.isFinite(slow)||price<=0)return;
  const recent=v.slice(-20),range=(Math.max(...recent)-Math.min(...recent))/price;
- // Initial market-specific volatility gates; validate and tune separately with historical and demo results.
  const maxRange=isGold()?0.004:0.0015,minRange=isGold()?0.00008:0.000025;
  if(range>maxRange||range<minRange)return;
- const pullbackWindow=v.slice(-9,-1),hadDipBelow=pullbackWindow.some(x=>x<=fast),hadPopAbove=pullbackWindow.some(x=>x>=fast);
+ const start=Math.max(0,v.length-9),end=v.length-1;
+ let hadDipBelow=false,hadPopAbove=false;
+ for(let i=start;i<end;i++){if(v[i]<=fastSeries[i])hadDipBelow=true;if(v[i]>=fastSeries[i])hadPopAbove=true;}
  let d=null;
  if(fast>slow&&price>fast&&hadDipBelow&&rsi>=52&&rsi<=67)d='RISE';
  else if(fast<slow&&price<fast&&hadPopAbove&&rsi>=33&&rsi<=48)d='FALL';
- if(d){log('1-MIN CANDLE SIGNAL '+d+' · EMA20/50 aligned · RSI '+rsi.toFixed(1)+' · volatility '+(range*100).toFixed(3)+'%');requestTrade(d);}
+ if(d){
+  const stake=Number($('stake').value),riskCap=sessionStartBalance*0.05;
+  if(!Number.isFinite(stake)||stake>riskCap){stopAuto('Safety stop: stake exceeds 5% of the virtual test balance. Lower the stake before restarting.');return;}
+  log('1-MIN SIGNAL '+d+' · EMA20/50 aligned · Wilder RSI '+rsi.toFixed(1)+' · range '+(range*100).toFixed(3)+'% · DEMO only');
+  requestTrade(d);
+ }
 }
 function onMarketTick(price,epoch){
  if(!Number.isFinite(price)||price<=0)return;
