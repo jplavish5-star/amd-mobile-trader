@@ -43,10 +43,10 @@
 <div class="row"><button class="green" id="callBtn" onclick="requestTrade('RISE')" disabled>▲ RISE</button><button class="red" id="putBtn" onclick="requestTrade('FALL')" disabled>▼ FALL</button></div>
 <div id="tradeStatus" class="muted" style="margin-top:10px">Connect and authorize a Demo or Real account to enable trading.</div>
 </div>
-<div class="card"><h3 style="margin:0 0 8px">AMD Auto Scalper</h3><div class="muted">Shared strategy for Gold and Forex: EMA 20/50 trend, RSI(14) momentum, EMA20 pullback/reclaim confirmation and a volatility filter. Both use completed 1-minute candles and minute-based contracts. Signals are selective, not guaranteed.</div><div class="row"><button class="green" id="autoStart" onclick="startAuto()" disabled>START AUTO</button><button class="red" id="autoStop" onclick="stopAuto()" disabled>STOP AUTO</button></div><div id="autoState" class="muted" style="margin-top:9px">Automation is OFF. Connect a DEMO account first.</div><div id="autoStats" class="muted" style="margin-top:7px">Session P/L: 0.00 · Wins: 0 · Losses: 0</div><div class="muted" style="margin-top:8px">Market-specific stake, one open contract, 2 completed 1-minute candle cooldown, stop after 2 consecutive losses or 7% session drawdown. No martingale. Test in DEMO only.</div></div>
+<div class="card"><h3 style="margin:0 0 8px">5-minute Forex strategy test</h3><p class="muted">Research-only historical test using completed 5-minute Forex candles. It tests EMA20/50 trend, Wilder RSI, EMA pullback and ATR volatility. Entries are scored on the following candle. This is directional accuracy before Deriv payout, spread, slippage or latency; it is NOT a profit simulation and cannot authorize live trading.</p><button class="blue full" id="runBacktest" onclick="runFiveMinuteBacktest()">RUN 5-MIN FOREX BACKTEST</button><div id="backtestResult" class="muted">Connect DEMO and choose a Forex pair to run the test.</div></div><div class="card"><h3 style="margin:0 0 8px">AMD Auto Scalper</h3><div class="muted">Shared strategy for Gold and Forex: EMA 20/50 trend, RSI(14) momentum, EMA20 pullback/reclaim confirmation and a volatility filter. Both use completed 1-minute candles and minute-based contracts. Signals are selective, not guaranteed.</div><div class="row"><button class="green" id="autoStart" onclick="startAuto()" disabled>START AUTO</button><button class="red" id="autoStop" onclick="stopAuto()" disabled>STOP AUTO</button></div><div id="autoState" class="muted" style="margin-top:9px">Automation is OFF. Connect a DEMO account first.</div><div id="autoStats" class="muted" style="margin-top:7px">Session P/L: 0.00 · Wins: 0 · Losses: 0</div><div class="muted" style="margin-top:8px">Market-specific stake, one open contract, 2 completed 1-minute candle cooldown, stop after 2 consecutive losses or 7% session drawdown. No martingale. Test in DEMO only.</div></div>
 <div class="card"><div id="log">Activity log\nWaiting for connection…</div></div>
 <script>
-let ws=null, mode='demo', authorized=false, currency='USD', tickSubId=null, contractSubs=new Set(), pendingProposal=null, marketDataReady=false, marketClosed=false;
+let ws=null, mode='demo', authorized=false, currency='USD', tickSubId=null, contractSubs=new Set(), pendingProposal=null, marketDataReady=false, marketClosed=false,backtestPending=false,lastBacktestReport='';
 let autoRunning=false,tradeInProgress=false,activeContractId=null,activeTradeMarket='Forex',marketStats={Gold:{wins:0,losses:0},Forex:{wins:0,losses:0}},priceHistory=[],activeMinute=null,activeMinuteClose=null,autoCooldown=0,sessionStartBalance=null,currentBalance=null,accountBalance=null,sessionPL=0,wins=0,losses=0,consecutiveLosses=0,settledContractIds=new Set(),alertsEnabled=false,sessionStartedAt=null,lastTradeSummary='No completed trades yet';
 const $=id=>document.getElementById(id);
 function log(message){const el=$('log');el.textContent+='\n'+new Date().toLocaleTimeString()+'  '+message;el.scrollTop=el.scrollHeight}
@@ -135,6 +135,7 @@ async function connect(){
     if(open.length){log('Reconnect recovery: found '+open.length+' open contract(s). Resubscribing to their results.');open.forEach(item=>{const id=Number(item.contract_id);if(Number.isFinite(id)){activeContractId=id;tradeInProgress=true;activeTradeMarket=String(item.underlying_symbol||'').toLowerCase().includes('xau')?'Gold':'Forex';socket.send(JSON.stringify({proposal_open_contract:1,contract_id:id,subscribe:1}));}});}
     else if(activeContractId!==null){log('Reconnect recovery: Deriv reports no open positions; previous session result may need manual reconciliation.');activeContractId=null;tradeInProgress=false;}
    }
+   if(data.msg_type==='candles'&&data.echo_req?.req_id===32&&Array.isArray(data.candles)){backtestPending=false;const result=scoreFiveMinuteBacktest(data.candles);$('backtestResult').textContent=result.summary;lastBacktestReport=result.report;log('5-minute Forex backtest completed. '+result.summary);$('runBacktest').disabled=false;}
    if(data.msg_type==='candles'&&data.echo_req?.ticks_history===$('symbol').value&&Array.isArray(data.candles)){
     const rows=data.candles.filter(x=>Number.isFinite(Number(x.close))&&Number.isFinite(Number(x.epoch)));
     if(rows.length){priceHistory=rows.slice(0,-1).map(x=>Number(x.close)).slice(-160);const last=rows[rows.length-1];activeMinute=Math.floor(Number(last.epoch)/60);activeMinuteClose=Number(last.close);log('Loaded '+priceHistory.length+' completed 1-minute candles for the shared strategy.');}
@@ -219,6 +220,36 @@ function startAuto(){
  autoRunning=true;autoCooldown=1;updateAutoUI('AUTO ON · Waiting for completed 1-minute candles and a confirmed setup.');log('DEMO AUTO SCALPER STARTED · Shared EMA 20/50 + RSI(14) pullback strategy · '+$('duration').value+' · stake '+$('stake').value+'.');setTradeEnabled(true);
 }
 function stopAuto(reason){autoRunning=false;updateAutoUI(reason||'AUTO OFF · No new trades will be opened.');log(reason||'Auto scalper stopped.');setTradeEnabled(authorized);}
+function runFiveMinuteBacktest(){
+ if(mode!=='demo'||!authorized||!ws||ws.readyState!==1){alert('Connect a Deriv DEMO account first.');return;}
+ if(isGold()){alert('Choose EUR/USD, GBP/USD or USD/JPY. This 5-minute strategy is Forex-only.');return;}
+ if(backtestPending){alert('A backtest request is already running.');return;}
+ backtestPending=true;$('runBacktest').disabled=true;$('backtestResult').textContent='Downloading 5-minute historical candles…';
+ ws.send(JSON.stringify({ticks_history:$('symbol').value,count:1000,end:'latest',style:'candles',granularity:300,req_id:32}));
+}
+function scoreFiveMinuteBacktest(raw){
+ const candles=raw.filter(x=>['open','high','low','close','epoch'].every(k=>Number.isFinite(Number(x[k])))).map(x=>({open:Number(x.open),high:Number(x.high),low:Number(x.low),close:Number(x.close),epoch:Number(x.epoch)}));
+ if(candles.length<100)return {summary:'Not enough valid 5-minute candles ('+candles.length+'). Need at least 100; no conclusion drawn.',report:'Insufficient data'};
+ const closes=candles.map(x=>x.close),fast=emaSeries(closes,20),slow=emaSeries(closes,50),signals=[];
+ const tr=candles.map((x,i)=>i===0?x.high-x.low:Math.max(x.high-x.low,Math.abs(x.high-candles[i-1].close),Math.abs(x.low-candles[i-1].close)));
+ for(let i=60;i<candles.length-1;i++){
+  const rsi=calcRsi(closes.slice(0,i+1),14),atr=tr.slice(i-13,i+1).reduce((a,b)=>a+b,0)/14,vol=atr/closes[i];
+  if(!Number.isFinite(rsi)||!Number.isFinite(vol)||vol<0.00003||vol>0.003)continue;
+  const lo=Math.max(0,i-3);let dip=false,pop=false;
+  for(let j=lo;j<i;j++){if(closes[j]<=fast[j])dip=true;if(closes[j]>=fast[j])pop=true;}
+  let dir=null;
+  if(fast[i]>slow[i]&&closes[i]>fast[i]&&dip&&rsi>=50&&rsi<=68)dir='RISE';
+  else if(fast[i]<slow[i]&&closes[i]<fast[i]&&pop&&rsi>=32&&rsi<=50)dir='FALL';
+  if(dir){const next=candles[i+1],correct=dir==='RISE'?next.close>next.open:next.close<next.open;signals.push({epoch:candles[i].epoch,dir,correct,split:i<Math.floor(candles.length*0.7)?'train':'holdout'});}
+ }
+ const stats=a=>({n:a.length,w:a.filter(x=>x.correct).length,l:a.filter(x=>!x.correct).length,rate:a.length?100*a.filter(x=>x.correct).length/a.length:0});
+ const train=stats(signals.filter(x=>x.split==='train')),test=stats(signals.filter(x=>x.split==='holdout')),all=stats(signals);
+ const fmt=s=>s.n+' signals · '+s.w+' correct / '+s.l+' wrong · '+s.rate.toFixed(1)+'% directional accuracy';
+ const pass=test.n>=100&&test.rate>50;
+ const summary=$('symbol').value+' · '+candles.length+' candles. Training: '+fmt(train)+'. Holdout: '+fmt(test)+'. '+(test.n<100?'INSUFFICIENT HOLDOUT SAMPLE — collect more data.':pass?'Holdout beat 50% before costs; further validation required.':'No demonstrated holdout edge before costs.');
+ const report='5-MIN FOREX STRATEGY RESEARCH\nPair: '+$('symbol').value+'\nCandles: '+candles.length+'\nTraining: '+fmt(train)+'\nOut-of-sample holdout: '+fmt(test)+'\nAll: '+fmt(all)+'\nImportant: directional candle accuracy only; excludes payout, spread, slippage, latency and execution. Not a profit estimate.';
+ return {summary,report};
+}
 function calcRsi(v,p=14){
  if(v.length<p+1)return null;
  let gain=0,loss=0;
