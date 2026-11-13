@@ -320,7 +320,9 @@ function onFiveMinuteTick(price,epoch){
 }
 function evaluateGoldFiveMinuteTester(){
  if(!testerRunning||!isGold()||tradeInProgress||pendingProposal||fiveMinuteCandles.length<60)return;
- const c=fiveMinuteCandles,closes=c.map(x=>x.close),fast=emaSeries(closes,20),slow=emaSeries(closes,50),rsi=calcRsi(closes.slice(-100),14),i=c.length-1;
+ const c=fiveMinuteCandles,closes=c.map(x=>x.close),fast=emaSeries(closes,20),slow=emaSeries(closes,50),rsiSeries=Array(c.length).fill(null),i=c.length-1;let avgGain=0,avgLoss=0;
+ for(let k=1;k<c.length;k++){const change=closes[k]-closes[k-1];if(k<=14){avgGain+=Math.max(change,0)/14;avgLoss+=Math.max(-change,0)/14;}else{avgGain=(avgGain*13+Math.max(change,0))/14;avgLoss=(avgLoss*13+Math.max(-change,0))/14;}if(k>=14)rsiSeries[k]=avgLoss===0?(avgGain===0?50:100):avgGain===0?0:100-100/(1+avgGain/avgLoss);}
+ const rsi=rsiSeries[i];
  if(lastTesterSignalEpoch===c[i].epoch)return;
  const ranges=[];for(let j=Math.max(1,i-13);j<=i;j++)ranges.push(Math.max(c[j].high-c[j].low,Math.abs(c[j].high-c[j-1].close),Math.abs(c[j].low-c[j-1].close)));
  const atr=ranges.reduce((a,b)=>a+b,0)/Math.max(1,ranges.length),vol=atr/closes[i];let dip=false,pop=false;
