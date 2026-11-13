@@ -210,7 +210,9 @@ function evaluateStrategy(){
  if(!autoRunning||tradeInProgress||autoCooldown>0||priceHistory.length<60)return;
  const v=priceHistory.slice(-100),price=v[v.length-1],fast=ema(v,20),slow=ema(v,50),rsi=calcRsi(v,14);if(rsi===null)return;
  const recent=v.slice(-20),range=(Math.max(...recent)-Math.min(...recent))/price;
- if(range>0.0035||range<0.000002)return;
+ // Initial market-specific volatility gates; validate and tune separately with historical and demo results.
+ const maxRange=isGold()?0.004:0.0015,minRange=isGold()?0.00008:0.000025;
+ if(range>maxRange||range<minRange)return;
  const pullbackWindow=v.slice(-9,-1),hadDipBelow=pullbackWindow.some(x=>x<=fast),hadPopAbove=pullbackWindow.some(x=>x>=fast);
  let d=null;
  if(fast>slow&&price>fast&&hadDipBelow&&rsi>=52&&rsi<=67)d='RISE';
