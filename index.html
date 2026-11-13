@@ -225,7 +225,7 @@ function runFiveMinuteBacktest(){
  if(isGold()){alert('Choose EUR/USD, GBP/USD or USD/JPY. This 5-minute strategy is Forex-only.');return;}
  if(backtestPending){alert('A backtest request is already running.');return;}
  backtestPending=true;$('runBacktest').disabled=true;$('backtestResult').textContent='Downloading 5-minute historical candles…';
- ws.send(JSON.stringify({ticks_history:$('symbol').value,count:1000,end:'latest',style:'candles',granularity:300,req_id:32}));
+ ws.send(JSON.stringify({ticks_history:$('symbol').value,count:5000,end:'latest',style:'candles',granularity:300,req_id:32}));
 }
 function scoreFiveMinuteBacktest(raw){
  const candles=raw.filter(x=>['open','high','low','close','epoch'].every(k=>Number.isFinite(Number(x[k])))).map(x=>({open:Number(x.open),high:Number(x.high),low:Number(x.low),close:Number(x.close),epoch:Number(x.epoch)})).slice(0,-1);
