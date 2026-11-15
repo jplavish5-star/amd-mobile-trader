@@ -287,7 +287,7 @@ function scoreMetaBacktest(raw){
   return {n:arr.length,w,l,rate:arr.length?100*w/arr.length:0,net:balance-start,end:balance,maxDD,maxDDPct:peak?100*maxDD/peak:0,pf:grossLoss?grossWin/grossLoss:(grossWin?Infinity:0),expectancy:arr.length?(balance-start)/arr.length:0,maxStreak,equity};
  };
  const results=trades.map((arr,i)=>({name:names[i],train:stats(arr.filter(t=>t.segment==='TRAIN')),test:stats(arr.filter(t=>t.segment==='HOLDOUT'))}));
- results.forEach(r=>r.pass=r.test.n>=30&&r.test.net>0&&r.test.pf>1);
+ results.forEach(r=>r.pass=r.test.n>=100&&r.test.net>0&&r.test.pf>1);
  const ranked=[...results].sort((a,b)=>b.test.net-a.test.net),best=ranked.find(r=>r.pass)||null;
  const fmt=x=>x.n+' trades · '+x.w+'W/'+x.l+'L · '+x.rate.toFixed(1)+'% wins · P/L '+(x.net>=0?'+':'')+x.net.toFixed(2)+' · DD '+x.maxDD.toFixed(2)+' · PF '+(Number.isFinite(x.pf)?x.pf.toFixed(2):'∞');
  const leaderboard=ranked.map((r,i)=>(i+1)+'. '+r.name+' — HOLDOUT '+fmt(r.test)+' | TRAIN '+fmt(r.train)+' | '+(r.pass?'positive holdout candidate':'NOT PASSED')).join('   •   ');
