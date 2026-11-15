@@ -38,7 +38,7 @@
 <button class="blue full" onclick="subscribeTicks()">GET LIVE PRICE</button>
 </div>
 <div class="card">
-<label for="stake">Stake (account currency)</label><input id="stake" type="number" value="0.35" min="0.35" step="0.01">
+<label for="stake">Stake (account currency)</label><input id="stake" type="number" value="0.35" min="0.01" step="0.01">
 <label for="duration">Contract duration</label><select id="duration"><option value="5m" selected>5 minutes</option><option value="10m">10 minutes</option><option value="15m">15 minutes</option></select><p id="marketNote" class="muted">Gold and Forex: minute-based options from 5 minutes. Market hours apply.</p>
 <div class="row"><button class="green" id="callBtn" onclick="requestTrade('RISE')" disabled>▲ RISE</button><button class="red" id="putBtn" onclick="requestTrade('FALL')" disabled>▼ FALL</button></div>
 <div id="tradeStatus" class="muted" style="margin-top:10px">Connect and authorize a Demo or Real account to enable trading.</div>
@@ -150,6 +150,7 @@ async function connect(){
      const note='Quote rejected: payout does not exceed the stake, or quote values are invalid.';
      if(trade.engine==='tester')updateTesterUI(note);else $('tradeStatus').textContent=note;log(note);updateAutoUI();return;
     }
+    if(accountBalance===null||!Number.isFinite(accountBalance)||ask>accountBalance){tradeInProgress=false;autoCooldown=2;const note='Quote exceeds the currently reported Deriv balance. No buy request was sent. Quote: '+ask.toFixed(2)+' '+currency+' · balance: '+(Number.isFinite(accountBalance)?accountBalance.toFixed(2):'not confirmed')+' '+currency+'.';if(trade.engine==='tester')updateTesterUI(note);else $('tradeStatus').textContent=note;log(note);updateAutoUI();return;}
     const payoutMultiple=payout/ask,breakEven=(ask/payout)*100;
     if(trade.engine==='tester'){testerLastQuote='Stake '+ask.toFixed(2)+' → payout '+payout.toFixed(2);updateTesterUI('Quote received · potential profit '+(payout-ask).toFixed(2)+' '+currency+' · break-even '+breakEven.toFixed(1)+'%.');}
     log((trade.engine==='tester'?'TESTER ':'')+'Quote checked · payout '+payout.toFixed(2)+' / stake '+ask.toFixed(2)+' · break-even win rate '+breakEven.toFixed(1)+'%.');
@@ -182,8 +183,8 @@ function updateMarketSettings(){
  sel.innerHTML=choices.map(x=>'<option value="'+x[0]+'">'+x[1]+'</option>').join('');
  sel.value=choices.some(x=>x[0]===current)?current:choices[0][0];
  $('marketNote').textContent=gold?'Gold / USD: minute-based options from 5 minutes. Gold follows market hours and may be unavailable on weekends.':(isBTC()?'BTC / USD: crypto trades 24/7, but Deriv contract availability and 5-minute options must be confirmed in DEMO before any trading. BTC is research-only in the strategy lab for now.':'Forex: minute-based options from 5 minutes. Trading follows the currency pair market session and closes on weekends.');
- $('stake').min='0.35';
- if(!Number.isFinite(Number($('stake').value))||Number($('stake').value)<0.35)$('stake').value='0.35';
+ $('stake').min='0.01';
+ if(!Number.isFinite(Number($('stake').value))||Number($('stake').value)<=0)$('stake').value='0.35';
  priceHistory=[];activeMinute=null;activeMinuteClose=null;fiveMinuteCandles=[];fiveMinuteBucket=null;testerHistoryReady=false;lastTesterSignalEpoch=null;
 }
 function subscribeTicks(){
@@ -203,8 +204,9 @@ function requestTrade(direction,engine='manual'){
  if(!marketDataReady||marketClosed){alert('No live price is available for this market. Wait for a live tick before trading.');return;}
  if(mode==='real'&&!confirm('Confirm REAL MONEY trade: '+direction+' '+$('symbol').value+' with stake '+$('stake').value+' '+currency+'?'))return;
  const stake=Number($('stake').value),durationValue=engine==='tester'?'5m':$('duration').value,unit=durationValue.endsWith('m')?'m':'t',duration=Number(durationValue.slice(0,-1));
- if(!Number.isFinite(stake)||stake<=0){alert('Enter a valid stake.');return;}
- if(stake<0.35){alert('Enter a stake of at least 0.35. Deriv will confirm the actual minimum in its quote.');return;}
+ if(!Number.isFinite(stake)||stake<=0){alert('Enter a valid stake greater than zero.');return;}
+ if(accountBalance===null||!Number.isFinite(accountBalance)){const note='Waiting for Deriv to confirm the account balance. No trade was sent.';if(engine==='tester')updateTesterUI(note);else $('tradeStatus').textContent=note;log(note);return;}
+ if(stake>accountBalance){const note='Insufficient available account balance: requested stake '+stake.toFixed(2)+' '+currency+', Deriv balance '+accountBalance.toFixed(2)+' '+currency+'. Lower the stake or use a funded DEMO account.';if(engine==='tester')updateTesterUI(note);else $('tradeStatus').textContent=note;log(note);return;}
  if(!Number.isInteger(duration)||duration<1||(unit==='t'&&duration>15)||(unit==='m'&&duration<5)){alert('Invalid duration for the selected market.');return;}
  if(pendingProposal||tradeInProgress){alert('A trade is already being processed. Please wait.');return;}
  const contractType=direction==='RISE'?'CALL':'PUT';
