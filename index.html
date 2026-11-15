@@ -268,7 +268,7 @@ function scoreMetaBacktest(raw){
  const prefix=[0];for(const x of tr)prefix.push(prefix[prefix.length-1]+x);
  const split=Math.floor(candles.length*.7),expiry=Number($('metaExpiry').value),payout=Number($('metaPayout').value)/100,start=Number($('metaStartBalance').value),stake=Number($('metaStake').value);
  if(stake>start*.05)return {summary:'Stake exceeds 5% of the selected virtual starting balance. Lower the stake and retry.',report:'Risk limit failed: stake exceeds 5% of virtual starting balance.'};
- const names=['Trend pullback','Momentum continuation','RSI reversal'],trades=names.map(()=>[]);
+ const names=['Trend pullback','Momentum continuation','RSI reversal'],trades=names.map(()=>[]),nextAvailable=[-1,-1,-1];
  const gold=backtestSymbol.toLowerCase().includes('xau'),btc=backtestSymbol.toLowerCase().includes('btc'),volMin=gold?.00008:(btc?.00015:.00002),volMax=gold?.012:(btc?.025:.003);
  for(let i=60;i<candles.length-expiry-1;i++){
   const atr=(prefix[i+1]-prefix[Math.max(1,i-13)])/14,vol=atr/closes[i],rr=rsi[i];
@@ -279,11 +279,11 @@ function scoreMetaBacktest(raw){
   if(up&&c.close>fast[i]&&dip&&rr>=50&&rr<=68)dirs[0]='RISE';else if(down&&c.close<fast[i]&&pop&&rr>=32&&rr<=50)dirs[0]='FALL';
   if(up&&c.close>prev.close&&c.close>fast[i]&&rr>=55&&rr<=75)dirs[1]='RISE';else if(down&&c.close<prev.close&&c.close<fast[i]&&rr>=25&&rr<=45)dirs[1]='FALL';
   if(rr<=30&&c.close>c.open)dirs[2]='RISE';else if(rr>=70&&c.close<c.open)dirs[2]='FALL';
-  dirs.forEach((dir,k)=>{if(!dir)return;const entryIndex=i+1,exitIndex=i+expiry,entry=candles[entryIndex].open,exit=candles[exitIndex].close;if(!Number.isFinite(entry)||!Number.isFinite(exit)||entry===exit)return;const win=dir==='RISE'?exit>entry:exit<entry;trades[k].push({signalEpoch:c.epoch,entryEpoch:candles[entryIndex].epoch,dir,entry,exit,win,segment:i<split?'TRAIN':'HOLDOUT'});});
+  dirs.forEach((dir,k)=>{if(!dir||i<=nextAvailable[k])return;const entryIndex=i+1,exitIndex=i+expiry,entry=candles[entryIndex].open,exit=candles[exitIndex].close;if(!Number.isFinite(entry)||!Number.isFinite(exit)||entry===exit)return;const win=dir==='RISE'?exit>entry:exit<entry;trades[k].push({signalEpoch:c.epoch,entryEpoch:candles[entryIndex].epoch,dir,entry,exit,win,segment:i<split?'TRAIN':'HOLDOUT'});nextAvailable[k]=exitIndex;});
  }
  const stats=(arr)=>{
   let balance=start,peak=start,maxDD=0,grossWin=0,grossLoss=0,w=0,l=0,streak=0,maxStreak=0;const equity=[start];
-  arr.forEach(t=>{const pnl=t.win?stake*payout:-stake;balance+=pnl;if(t.win){w++;grossWin+=pnl;streak=0;}else{l++;grossLoss+=Math.abs(pnl);streak++;maxStreak=Math.max(maxStreak,streak);}peak=Math.max(peak,balance);maxDD=Math.max(maxDD,peak-balance);equity.push(balance);});
+  arr.forEach(t=>{if(balance<stake)return;const pnl=t.win?stake*payout:-stake;balance+=pnl;if(t.win){w++;grossWin+=pnl;streak=0;}else{l++;grossLoss+=Math.abs(pnl);streak++;maxStreak=Math.max(maxStreak,streak);}peak=Math.max(peak,balance);maxDD=Math.max(maxDD,peak-balance);equity.push(balance);});
   return {n:arr.length,w,l,rate:arr.length?100*w/arr.length:0,net:balance-start,end:balance,maxDD,maxDDPct:peak?100*maxDD/peak:0,pf:grossLoss?grossWin/grossLoss:(grossWin?Infinity:0),expectancy:arr.length?(balance-start)/arr.length:0,maxStreak,equity};
  };
  const results=trades.map((arr,i)=>({name:names[i],train:stats(arr.filter(t=>t.segment==='TRAIN')),test:stats(arr.filter(t=>t.segment==='HOLDOUT'))}));
