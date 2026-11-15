@@ -282,16 +282,16 @@ function scoreMetaBacktest(raw){
   dirs.forEach((dir,k)=>{if(!dir||i<=nextAvailable[k])return;const entryIndex=i+1,exitIndex=i+expiry,entry=candles[entryIndex].open,exit=candles[exitIndex].close;if(!Number.isFinite(entry)||!Number.isFinite(exit)||entry===exit)return;const win=dir==='RISE'?exit>entry:exit<entry;trades[k].push({signalEpoch:c.epoch,entryEpoch:candles[entryIndex].epoch,dir,entry,exit,win,segment:i<split?'TRAIN':'HOLDOUT'});nextAvailable[k]=exitIndex;});
  }
  const stats=(arr)=>{
-  let balance=start,peak=start,maxDD=0,grossWin=0,grossLoss=0,w=0,l=0,streak=0,maxStreak=0;const equity=[start];
-  arr.forEach(t=>{if(balance<stake)return;const pnl=t.win?stake*payout:-stake;balance+=pnl;if(t.win){w++;grossWin+=pnl;streak=0;}else{l++;grossLoss+=Math.abs(pnl);streak++;maxStreak=Math.max(maxStreak,streak);}peak=Math.max(peak,balance);maxDD=Math.max(maxDD,peak-balance);equity.push(balance);});
-  return {n:arr.length,w,l,rate:arr.length?100*w/arr.length:0,net:balance-start,end:balance,maxDD,maxDDPct:peak?100*maxDD/peak:0,pf:grossLoss?grossWin/grossLoss:(grossWin?Infinity:0),expectancy:arr.length?(balance-start)/arr.length:0,maxStreak,equity};
+  let balance=start,peak=start,maxDD=0,grossWin=0,grossLoss=0,w=0,l=0,executed=0,streak=0,maxStreak=0;const equity=[start];
+  arr.forEach(t=>{if(balance<stake)return;executed++;const pnl=t.win?stake*payout:-stake;balance+=pnl;if(t.win){w++;grossWin+=pnl;streak=0;}else{l++;grossLoss+=Math.abs(pnl);streak++;maxStreak=Math.max(maxStreak,streak);}peak=Math.max(peak,balance);maxDD=Math.max(maxDD,peak-balance);equity.push(balance);});
+  return {n:executed,w,l,rate:executed?100*w/executed:0,net:balance-start,end:balance,maxDD,maxDDPct:peak?100*maxDD/peak:0,pf:grossLoss?grossWin/grossLoss:(grossWin?Infinity:0),expectancy:executed?(balance-start)/executed:0,maxStreak,equity};
  };
  const results=trades.map((arr,i)=>({name:names[i],train:stats(arr.filter(t=>t.segment==='TRAIN')),test:stats(arr.filter(t=>t.segment==='HOLDOUT'))}));
  results.forEach(r=>r.pass=r.test.n>=100&&r.test.net>0&&r.test.pf>1);
  const ranked=[...results].sort((a,b)=>b.test.net-a.test.net),best=ranked.find(r=>r.pass)||null;
  const fmt=x=>x.n+' trades · '+x.w+'W/'+x.l+'L · '+x.rate.toFixed(1)+'% wins · P/L '+(x.net>=0?'+':'')+x.net.toFixed(2)+' · DD '+x.maxDD.toFixed(2)+' · PF '+(Number.isFinite(x.pf)?x.pf.toFixed(2):'∞');
  const leaderboard=ranked.map((r,i)=>(i+1)+'. '+r.name+' — HOLDOUT '+fmt(r.test)+' | TRAIN '+fmt(r.train)+' | '+(r.pass?'positive holdout candidate':'NOT PASSED')).join('   •   ');
- const summary=backtestSymbol+' · '+candles.length+' candles · '+(backtestGranularity/60)+'-minute timeframe · '+expiry+'-candle expiry. '+(best?'Best research candidate: '+best.name+'.':'NO VALIDATED EDGE: no strategy had at least 30 holdout trades, positive simulated net P/L and profit factor above 1.');
+ const summary=backtestSymbol+' · '+candles.length+' candles · '+(backtestGranularity/60)+'-minute timeframe · '+expiry+'-candle expiry. '+(best?'Best research candidate: '+best.name+'.':'NO VALIDATED EDGE: no strategy had at least 100 holdout trades, positive simulated net P/L and profit factor above 1.');
  const report='AMD META HISTORICAL BACKTEST\nMarket: '+backtestSymbol+'\nTimeframe minutes: '+(backtestGranularity/60)+'\nCandles: '+candles.length+'\nTrain/holdout: '+split+'/'+(candles.length-split)+' candles (chronological 70/30)\nExpiry: '+expiry+' candle(s)\nVirtual start: '+start.toFixed(2)+'\nFixed stake: '+stake.toFixed(2)+' (max 5% of start)\nAssumed net win payout: '+(payout*100).toFixed(0)+'% of stake (scenario only; NOT historical Deriv payout)\n'+ranked.map(r=>r.name+'\nTRAIN: '+fmt(r.train)+'\nHOLDOUT: '+fmt(r.test)+'\n').join('\n')+'\nBest qualifying candidate: '+(best?best.name:'NONE')+'\nEntry approximation: next candle open; expiry approximation: selected future candle close. Fees, slippage, latency, historical quote availability and intrabar path are not modelled. No strategy auto-enabled.';
  return {summary,report,leaderboard,best};
 }
