@@ -197,6 +197,7 @@ function subscribeTicks(){
  $('symName').textContent=symbol+' · waiting for live tick';$('tradeStatus').textContent='Waiting for a live quote. Auto trading stays locked until this market sends a tick.';log('Requested 1-minute candle history and live ticks for '+symbol+'. Auto remains locked until live data arrives.');
 }
 function requestTrade(direction,engine='manual'){
+ if(isBTC()){alert('BTC is research-only for now. Run the 5-minute strategy lab; manual and automated BTC contracts stay locked until Deriv contract availability and DEMO payouts are verified.');return;}
  if(!authorized||!ws||ws.readyState!==1){alert('Connect and authorize the selected account first.');return;}
  if(engine==='tester'&&(mode!=='demo'||!isGold())){alert('The Gold tester can only place DEMO contracts on Gold/USD.');return;}
  if(!marketDataReady||marketClosed){alert('No live price is available for this market. Wait for a live tick before trading.');return;}
