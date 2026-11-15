@@ -268,8 +268,8 @@ function scoreMetaBacktest(raw){
  const prefix=[0];for(const x of tr)prefix.push(prefix[prefix.length-1]+x);
  const split=Math.floor(candles.length*.7),expiry=Number($('metaExpiry').value),payout=Number($('metaPayout').value)/100,start=Number($('metaStartBalance').value),stake=Number($('metaStake').value);
  if(stake>start*.05)return {summary:'Stake exceeds 5% of the selected virtual starting balance. Lower the stake and retry.',report:'Risk limit failed: stake exceeds 5% of virtual starting balance.'};
- const names=['Trend pullback','Momentum continuation','RSI reversal','Gold 5m original tester'],trades=names.map(()=>[]),nextAvailable=names.map(()=>-1),gold5m=gold&&backtestGranularity===300;
  const gold=backtestSymbol.toLowerCase().includes('xau'),btc=backtestSymbol.toLowerCase().includes('btc'),volMin=gold?.00008:(btc?.00015:.00002),volMax=gold?.012:(btc?.025:.003);
+ const names=['Trend pullback','Momentum continuation','RSI reversal','Gold 5m original tester'],trades=names.map(()=>[]),nextAvailable=names.map(()=>-1),gold5m=gold&&backtestGranularity===300;
  for(let i=60;i<candles.length-expiry-1;i++){
   const atr=(prefix[i+1]-prefix[Math.max(1,i-13)])/14,vol=atr/closes[i],rr=rsi[i];
   if(!Number.isFinite(rr)||!Number.isFinite(vol)||vol<volMin||vol>volMax)continue;
