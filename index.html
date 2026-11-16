@@ -130,7 +130,7 @@ async function connect(){
   socket.onmessage=event=>{
    if(ws!==socket)return;
    let data;try{data=JSON.parse(event.data)}catch(e){log('Received unreadable server response.');return;}
-   if(data.error){if(pendingProposal){const failedEngine=pendingProposal.engine;pendingProposal=null;tradeInProgress=false;autoCooldown=2;if(failedEngine==='tester')updateTesterUI('Deriv rejected the quote/order: '+(data.error.message||'Unknown error'));}if(data.echo_req?.req_id===32||data.req_id===32){finishBacktest('Historical data request failed: '+(data.error.message||'Unknown error')+'. Retry when Deriv market data is available.');}const msg=data.error.message||'Unknown API error';log('Deriv API error: '+msg);$('tradeStatus').textContent=msg;if(/market.*closed|closed.*market|market is presently closed/i.test(msg)){marketClosed=true;marketDataReady=false;stopAuto('AUTO BLOCKED · This market is closed. Select an open market and press GET LIVE PRICE.');stopTester('TEST BLOCKED · This market is closed. Choose an open market before restarting.');status('⚠️ Selected market is closed','#65420e');setTradeEnabled(false);}if(data.msg_type==='proposal'||data.msg_type==='buy'){pendingProposal=null;tradeInProgress=false;autoCooldown=2;if(activeTradeEngine==='tester')updateTesterUI('Deriv rejected the contract order: '+msg);}return;}
+   if(data.error){if(pendingProposal&&/not offered for this duration|duration.*not available|invalid.*duration/i.test(data.error.message||'')&&pendingProposal.engine==='auto'&&mode==='demo'){const trade=pendingProposal,alternatives=[5,10,15].filter(m=>!trade.durationTried.includes(m));if(alternatives.length){const next=alternatives[0];trade.durationTried.push(next);trade.duration=next;const contractType=trade.direction==='RISE'?'CALL':'PUT';log('Deriv does not offer '+trade.durationTried[trade.durationTried.length-2]+' minutes for '+$('symbol').value+'; retrying AUTO with '+next+' minutes.');$('autoState').textContent='AUTO ON · checking supported '+next+'-minute contract duration…';socket.send(JSON.stringify({proposal:1,amount:trade.stake,basis:'stake',contract_type:contractType,currency,duration:next,duration_unit:'m',subscribe:1,underlying_symbol:$('symbol').value}));return;}}if(pendingProposal){const failedEngine=pendingProposal.engine;pendingProposal=null;tradeInProgress=false;autoCooldown=2;if(failedEngine==='tester')updateTesterUI('Deriv rejected the quote/order: '+(data.error.message||'Unknown error'));}if(data.echo_req?.req_id===32||data.req_id===32){finishBacktest('Historical data request failed: '+(data.error.message||'Unknown error')+'. Retry when Deriv market data is available.');}const msg=data.error.message||'Unknown API error';log('Deriv API error: '+msg);$('tradeStatus').textContent=msg;if(/market.*closed|closed.*market|market is presently closed/i.test(msg)){marketClosed=true;marketDataReady=false;stopAuto('AUTO BLOCKED · This market is closed. Select an open market and press GET LIVE PRICE.');stopTester('TEST BLOCKED · This market is closed. Choose an open market before restarting.');status('⚠️ Selected market is closed','#65420e');setTradeEnabled(false);}if(data.msg_type==='proposal'||data.msg_type==='buy'){pendingProposal=null;tradeInProgress=false;autoCooldown=2;if(activeTradeEngine==='tester')updateTesterUI('Deriv rejected the contract order: '+msg);}return;}
    if(data.msg_type==='balance'&&data.balance){
     currency=data.balance.currency||currency;
     accountBalance=Number(data.balance.balance);$('balance').textContent='Deriv '+mode.toUpperCase()+' balance: '+accountBalance.toFixed(2)+' '+currency+' · '+(account.loginid||account.id);$('currentBalance').textContent=currentBalance.toFixed(2)+' '+currency;$('initialBalance').textContent=sessionStartBalance.toFixed(2)+' '+currency;updateAutoUI();
@@ -213,12 +213,12 @@ const DERIV_MIN_STAKE=0.50;
 function calculateAutoStake(){
  const start=Number(sessionStartBalance),balance=Number(currentBalance);
  if(!Number.isFinite(start)||start<=0||!Number.isFinite(balance)||balance<=0)return {ok:false,reason:'Virtual balance is unavailable. Reconnect DEMO.'};
- const cap=Math.floor(Math.min(start*0.05,balance*0.05)*100+1e-8)/100;
- if(cap+1e-8<DERIV_MIN_STAKE)return {ok:false,reason:'5% safety cap is below Deriv minimum stake $0.50. Auto trading is paused to protect the DEMO balance.'};
+ // DEMO Auto Scalper: remove the 5% stop that prevented the $0.50 Deriv minimum.
+ // Keep hard affordability protection: never stake more than the available virtual balance.
  const target=Math.max(DERIV_MIN_STAKE,Math.floor(balance*0.03*100+1e-8)/100);
- const amount=Math.min(cap,target);
- if(!Number.isFinite(amount)||amount+1e-8<DERIV_MIN_STAKE)return {ok:false,reason:'Calculated stake is below Deriv minimum $0.50. No order sent.'};
- return {ok:true,amount:Number(amount.toFixed(2)),cap:Number(cap.toFixed(2)),balance};
+ const amount=Math.min(balance,target);
+ if(!Number.isFinite(amount)||amount+1e-8<DERIV_MIN_STAKE)return {ok:false,reason:'DEMO balance is below Deriv minimum stake $0.50. Auto trading is paused.'};
+ return {ok:true,amount:Number(amount.toFixed(2)),balance};
 }
 function getTradeStake(engine){
  if((engine==='auto'||engine==='tester')&&mode==='demo'&&$('stakeMode').value==='auto'){
@@ -253,7 +253,7 @@ function requestTrade(direction,engine='manual'){
  if(!Number.isInteger(duration)||duration<5||unit!=='m'){alert('This strategy requires a supported minute-based contract (5 minutes or longer).');return;}
  if(pendingProposal||tradeInProgress){alert('A trade is already being processed. Please wait.');return;}
  const contractType=direction==='RISE'?'CALL':'PUT';
- if(engine==='tester'&&(mode!=='demo'||!isGold()||sessionStartBalance===null||stake>Math.min(0.50,sessionStartBalance*0.05))){alert('Gold tester is DEMO-only. Select Gold/USD and use a stake no higher than $0.50 (and no higher than 5% of your virtual balance).');return;}const trade={direction,stake,engine};pendingProposal=trade;tradeInProgress=true;activeTradeEngine=engine;activeTradeMarket=isGold()?'Gold':'Forex';
+ if(engine==='tester'&&(mode!=='demo'||!isGold()||sessionStartBalance===null||stake>Math.min(0.50,sessionStartBalance*0.05))){alert('Gold tester is DEMO-only. Select Gold/USD and use a stake no higher than $0.50 (and no higher than 5% of your virtual balance).');return;}const trade={direction,stake,engine,durationTried:[duration]};pendingProposal=trade;tradeInProgress=true;activeTradeEngine=engine;activeTradeMarket=isGold()?'Gold':'Forex';
  if(engine==='tester')$('testerState').textContent='Requesting live Deriv quote…';else $('tradeStatus').textContent='Requesting a price quote…';log((engine==='tester'?'TESTER ':'')+'Requesting '+direction+' proposal: '+stake+' '+currency+', '+duration+' '+(unit==='m'?'minutes':'ticks')+'.');
  ws.send(JSON.stringify({proposal:1,amount:stake,basis:'stake',contract_type:contractType,currency,duration,duration_unit:unit,subscribe:1,underlying_symbol:$('symbol').value}));
 }
@@ -264,7 +264,7 @@ function stopTester(reason){testerRunning=false;updateTesterUI(reason||'TEST OFF
 function updateAutoUI(message){
  $('autoState').textContent=message||(autoRunning?'AUTO ON · Waiting for signal.':'Automation is OFF.');
  $('autoStats').textContent='Session P/L: '+sessionPL.toFixed(2)+' '+currency+' · Wins: '+wins+' · Losses: '+losses+' · Consecutive losses: '+consecutiveLosses;
- if($('stakeMode')&&$('stakeMode').value==='auto'&&mode==='demo'){const s=calculateAutoStake();$('stakeInfo').textContent=s.ok?'Next AUTO stake: '+s.amount.toFixed(2)+' '+currency+' · virtual balance '+s.balance.toFixed(2)+' '+currency+'.':s.reason;}
+ if($('stakeMode')&&$('stakeMode').value==='auto'&&mode==='demo'){const s=calculateAutoStake();$('stakeInfo').textContent=s.ok?'Next AUTO stake: '+s.amount.toFixed(2)+' '+currency+' · 3% target, Deriv minimum $0.50; limited by available DEMO balance.':s.reason;}
  $('autoStart').disabled=!authorized||autoRunning||testerRunning||!marketDataReady;$('autoStop').disabled=!autoRunning;
  $('callBtn').disabled=!authorized||autoRunning||testerRunning||!marketDataReady;$('putBtn').disabled=!authorized||autoRunning||testerRunning||!marketDataReady;updateTesterUI();
 }
