@@ -39,7 +39,7 @@
 </div>
 <div class="card">
 <label for="stake">Stake (account currency)</label><input id="stake" type="number" value="1" min="0.35" step="0.01">
-<label for="duration">Duration (ticks)</label><input id="duration" type="number" value="5" min="1" max="10" step="1">
+<label for="duration">Contract duration</label><select id="duration"><option value="5" selected>5 minutes</option><option value="10">10 minutes</option><option value="15">15 minutes</option></select><p class="muted">Gold and Forex use minute-based contracts. Market hours apply.</p>
 <div class="row"><button class="green" id="callBtn" onclick="requestTrade('CALL')" disabled>▲ RISE</button><button class="red" id="putBtn" onclick="requestTrade('PUT')" disabled>▼ FALL</button></div>
 <div id="tradeStatus" class="muted" style="margin-top:10px">Connect and authorize a Demo or Real account to enable trading.</div>
 </div>
@@ -158,11 +158,11 @@ function requestTrade(direction){
  if(mode==='real'&&!confirm('Confirm REAL MONEY trade: '+direction+' '+$('symbol').value+' with stake '+$('stake').value+' '+currency+'?'))return;
  const stake=Number($('stake').value),duration=Number($('duration').value);
  if(!Number.isFinite(stake)||stake<=0){alert('Enter a valid stake.');return;}
- if(!Number.isInteger(duration)||duration<1||duration>10){alert('Duration must be 1–10 ticks.');return;}
+ if(![5,10,15].includes(duration)){alert('Choose a 5, 10, or 15 minute contract.');return;}
  if(pendingProposal){alert('A trade quote is already being processed. Please wait.');return;}
  const trade={direction,stake};pendingProposal=trade;
- $('tradeStatus').textContent='Requesting a price quote…';log('Requesting '+direction+' proposal: '+stake+' '+currency+', '+duration+' ticks.');
- ws.send(JSON.stringify({proposal:1,amount:stake,basis:'stake',contract_type:direction,currency,duration,duration_unit:'t',subscribe:1,underlying_symbol:$('symbol').value}));
+ $('tradeStatus').textContent='Requesting a '+duration+'-minute price quote…';log('Requesting '+direction+' proposal: '+stake+' '+currency+', '+duration+' minutes.');
+ ws.send(JSON.stringify({proposal:1,amount:stake,basis:'stake',contract_type:direction,currency,duration,duration_unit:'m',subscribe:1,underlying_symbol:$('symbol').value}));
 }
 window.addEventListener('beforeunload',()=>{if(ws)ws.close();});
 </script>
