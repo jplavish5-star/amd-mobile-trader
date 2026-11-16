@@ -376,10 +376,10 @@ async function connect(){
               log("TEST CYCLE "+(cycleWon?"WON":"LOST")+" · cycle "+testState.cycleNumber+" · "+(testState.cycleProfit>=0?"+$":"-$")+Math.abs(testState.cycleProfit).toFixed(2)+" · cumulative "+(testState.totalProfit>=0?"+$":"-$")+Math.abs(testState.totalProfit).toFixed(2));
               testState.cycleNumber++;
               if(testState.totalProfit<=-5){
-                testState.status="stopped";testModeActive=false;stopAutomation("TEST STOPPED · cumulative loss limit -$5.00 reached");
+                testState.status="stopped";testModeActive=false;saveAndRenderTest();stopAutomation("TEST STOPPED · cumulative loss limit -$5.00 reached");
                 log("TEST STOPPED at cumulative loss limit. Review results before any new test.");
               }else if(testState.tradeCount>=200){
-                testState.status="completed";testModeActive=false;stopAutomation("TEST COMPLETE · 200 settled trades recorded");
+                testState.status="completed";testModeActive=false;saveAndRenderTest();stopAutomation("TEST COMPLETE · 200 settled trades recorded");
                 log("TEST COMPLETE · 200 settled trades. Review the full report.");
               }else{
                 virtualBalance=VIRTUAL_START;profitToday=0;peakProfit=0;protectedProfit=0;profitLockActive=false;profitLockTriggered=false;virtualStopTriggered=false;consecutiveLosses=0;pauseUntil=0;currentStake=BASE_STAKE;step=0;
@@ -395,13 +395,13 @@ async function connect(){
                 log("New TEST cycle "+testState.cycleNumber+" ready at virtual $10.00.");
               }
             }else if(testState.totalProfit<=-5){
-              testState.status="stopped";testModeActive=false;stopAutomation("TEST STOPPED · cumulative loss limit -$5.00 reached");
+              testState.status="stopped";testModeActive=false;saveAndRenderTest();stopAutomation("TEST STOPPED · cumulative loss limit -$5.00 reached");
               log("TEST STOPPED at cumulative loss limit. Review results before any new test.");
             }else if(testState.tradeCount>=200){
-              testState.status="completed";testModeActive=false;stopAutomation("TEST COMPLETE · 200 settled trades recorded");
+              testState.status="completed";testModeActive=false;saveAndRenderTest();stopAutomation("TEST COMPLETE · 200 settled trades recorded");
               log("TEST COMPLETE · 200 settled trades. Review the full report.");
             }else if(profitLockActive&&profitToday<=protectedProfit){
-              testState.status="stopped";testModeActive=false;stopAutomation("TEST STOPPED · Dynamic Profit Lock triggered");
+              testState.status="stopped";testModeActive=false;saveAndRenderTest();stopAutomation("TEST STOPPED · Dynamic Profit Lock triggered");
               log("TEST STOPPED by Dynamic Profit Lock. The test record is saved.");
             }else if(auto){setState(pauseUntil>Date.now()?"TEST PAUSED · 60s loss cooldown":"TEST RUNNING · scanning R_10");}
           }else if(virtualBalance<=VIRTUAL_STOP){
