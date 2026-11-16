@@ -149,6 +149,15 @@ function loadTestState(){
     if(saved&&saved.version===1){
       testState=Object.assign(testState,saved);
       if(typeof testState.firstCycleCheck!=="boolean"&&testState.tradeCount===0)testState.firstCycleCheck=true;
+      // Recover the older build's saved DPL stop as a completed cycle, without losing prior trades.
+      if(testState.status==="stopped"&&testState.cycleProfitLockActive&&testState.openContractId===null&&testState.tradeCount<200&&testState.totalProfit>-5){
+        if(Number(testState.cycleProfit)>0)testState.cyclesWon++;else testState.cyclesLost++;
+        log("Recovered saved Dynamic Profit Lock cycle as "+(Number(testState.cycleProfit)>0?"WIN":"LOSS")+" · "+(Number(testState.cycleProfit)>=0?"+$":"-$")+Math.abs(Number(testState.cycleProfit)).toFixed(2)+". Existing test totals preserved.");
+        testState.cycleNumber++;
+        testState.cycleBalance=VIRTUAL_START;testState.cycleProfit=0;testState.cyclePeakProfit=0;testState.cycleProtectedProfit=0;testState.cycleProfitLockActive=false;
+        testState.status="paused";
+        saveTestState();
+      }
       if(testState.status==="running")testState.status="paused";
       testModeActive=testState.status==="paused";
       profitToday=Number(testState.cycleProfit)||0;
@@ -369,11 +378,12 @@ async function connect(){
           if(testModeActive){testState.openContractId=null;saveTestState();}
           $("openTrade").textContent="Open contract: none";
           if(testModeActive){
-            const cycleWon=virtualBalance>=VIRTUAL_TAKE_PROFIT;
-            const cycleLost=virtualBalance<=VIRTUAL_STOP;
+            const cycleLockHit=profitLockActive&&profitToday<=protectedProfit;
+            const cycleWon=virtualBalance>=VIRTUAL_TAKE_PROFIT||(cycleLockHit&&testState.cycleProfit>0);
+            const cycleLost=virtualBalance<=VIRTUAL_STOP||(cycleLockHit&&testState.cycleProfit<=0);
             if(cycleWon||cycleLost){
               if(cycleWon)testState.cyclesWon++;else testState.cyclesLost++;
-              log("TEST CYCLE "+(cycleWon?"WON":"LOST")+" · cycle "+testState.cycleNumber+" · "+(testState.cycleProfit>=0?"+$":"-$")+Math.abs(testState.cycleProfit).toFixed(2)+" · cumulative "+(testState.totalProfit>=0?"+$":"-$")+Math.abs(testState.totalProfit).toFixed(2));
+              log("TEST CYCLE "+(cycleWon?"WON":"LOST")+(cycleLockHit?" · Dynamic Profit Lock":"")+" · cycle "+testState.cycleNumber+" · "+(testState.cycleProfit>=0?"+$":"-$")+Math.abs(testState.cycleProfit).toFixed(2)+" · cumulative "+(testState.totalProfit>=0?"+$":"-$")+Math.abs(testState.totalProfit).toFixed(2));
               testState.cycleNumber++;
               if(testState.totalProfit<=-5){
                 testState.status="stopped";testModeActive=false;saveAndRenderTest();stopAutomation("TEST STOPPED · cumulative loss limit -$5.00 reached");
@@ -400,9 +410,6 @@ async function connect(){
             }else if(testState.tradeCount>=200){
               testState.status="completed";testModeActive=false;saveAndRenderTest();stopAutomation("TEST COMPLETE · 200 settled trades recorded");
               log("TEST COMPLETE · 200 settled trades. Review the full report.");
-            }else if(profitLockActive&&profitToday<=protectedProfit){
-              testState.status="stopped";testModeActive=false;saveAndRenderTest();stopAutomation("TEST STOPPED · Dynamic Profit Lock triggered");
-              log("TEST STOPPED by Dynamic Profit Lock. The test record is saved.");
             }else if(auto){setState(pauseUntil>Date.now()?"TEST PAUSED · 60s loss cooldown":"TEST RUNNING · scanning R_10");}
           }else if(virtualBalance<=VIRTUAL_STOP){
             virtualStopTriggered=true;stopAutomation("VIRTUAL STOP LOSS HIT · $"+virtualBalance.toFixed(2)+" · SESSION LOCKED");$("start").disabled=true;
