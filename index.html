@@ -30,7 +30,7 @@ button:disabled{opacity:.4}.row{display:grid;grid-template-columns:1fr 1fr;gap:1
 <span class="pill">DERIV · DEMO FIRST · V2</span>
 <h1>Volatility 10 Rise / Fall Bot · V2</h1>
 <p>Automatic R_10 tick-momentum strategy. Three consecutive rising ticks signal RISE (CALL); three consecutive falling ticks signal FALL (PUT). Contract duration: 5 ticks.</p>
-<p class="warning">V2 supports USD starting capital of $10 or more: base stake $0.10, progression $0.10 → $0.21 → $0.44 maximum, +$1 take profit, -$1.50 stop loss, and a 60-second pause after two consecutive losses. AUTO is blocked below $10. Blue = BUY / RISE; white = SELL / FALL. DEMO testing only; no guaranteed edge.</p>
+<p class="warning">V2 supports USD starting capital of $10 or more: Deriv minimum stake $0.35, progression $0.35 → $0.70 then reset after a 60-second pause following two consecutive losses. Take profit +$1, stop loss -$1.50. AUTO is blocked below $10. Blue = BUY / RISE; white = SELL / FALL. DEMO testing only; no guaranteed edge.</p>
 </div>
 
 <div class="card">
@@ -78,7 +78,7 @@ button:disabled{opacity:.4}.row{display:grid;grid-template-columns:1fr 1fr;gap:1
 <div><label>Session profit / loss</label><div class="stat" id="pl">$0.00</div></div>
 <div><label>Wins / losses</label><div class="stat" id="wl">0 / 0</div></div>
 </div>
-<p>V2 limits: base $0.10 · max stake $0.44 · take profit +$1.00 · stop loss -$1.50</p>
+<p>V2 limits: base $0.35 · max stake $0.70 · take profit +$1.00 · stop loss -$1.50</p>
 <p id="openTrade">Open contract: none</p>
 </div>
 
@@ -91,7 +91,7 @@ button:disabled{opacity:.4}.row{display:grid;grid-template-columns:1fr 1fr;gap:1
 (function(){
 "use strict";
 const $=id=>document.getElementById(id);
-const BASE_STAKE=0.10,MAX_STEPS=2,DURATION=5,TAKE_PROFIT=1.0,STOP_LOSS=1.5,SYMBOL="R_10";
+const BASE_STAKE=0.35,MAX_STEPS=1,DURATION=5,TAKE_PROFIT=1.0,STOP_LOSS=1.5,SYMBOL="R_10";
 let ws=null,authorized=false,auto=false,balance=0,startBalance=0,currency="USD";
 let currentStake=BASE_STAKE,step=0,profitToday=0,wins=0,losses=0;
 let ticks=[],pending=false,contractId=null,contractSub=null,heartbeat=null,lastSignalAt=0;
@@ -225,17 +225,15 @@ async function connect(){
           if(profit>0){wins++;currentStake=BASE_STAKE;step=0;consecutiveLosses=0;pauseUntil=0;}
           else{
             losses++;
-            if(step>=MAX_STEPS){
-              log("Maximum martingale stake $0.44 lost. Stopping AUTO; no further stake increase.");
-              stopAutomation("MAX MARTINGALE LOSS · AUTO OFF");
-            }else{
-              consecutiveLosses++;
-              step++;
-              currentStake=step===1?0.21:0.44;
-              if(consecutiveLosses>=2){
-                pauseUntil=Date.now()+60000;
-                log("Two consecutive losses. Pausing 60 seconds; next and final stake is $0.44.");
-              }
+            consecutiveLosses++;
+            if(step<MAX_STEPS){
+              step=1;
+              currentStake=0.70;
+              log("Loss recorded. Next stake is capped at $0.70.");
+            }
+            if(consecutiveLosses>=2){
+              pauseUntil=Date.now()+60000;
+              log("Two consecutive losses. Pausing 60 seconds; then resetting to the $0.35 base stake.");
             }
           }
           updateStats();
@@ -277,11 +275,11 @@ function evaluateTicks(){
   else{showSignal(null,"No three-tick direction confirmed");}
   if(!auto||!authorized||pending||contractId!==null)return;
   const now=Date.now();
-  if(pauseUntil&&now>=pauseUntil){pauseUntil=0;consecutiveLosses=0;updateStats();log("60-second pause complete. Resuming with next planned stake $"+currentStake.toFixed(2)+".");}
+  if(pauseUntil&&now>=pauseUntil){pauseUntil=0;consecutiveLosses=0;currentStake=BASE_STAKE;step=0;updateStats();log("60-second pause complete. Reset to base stake $0.35.");}
   if(pauseUntil&&now<pauseUntil){setState("TWO-LOSS PAUSE · "+Math.ceil((pauseUntil-now)/1000)+"s remaining");return;}
   if(profitToday>=TAKE_PROFIT){stopAutomation("TAKE PROFIT HIT · AUTO OFF");return;}
   if(profitToday<=-STOP_LOSS){stopAutomation("STOP LOSS HIT · AUTO OFF");return;}
-  if(step>MAX_STEPS){currentStake=0.44;step=MAX_STEPS;updateStats();}
+  if(step>MAX_STEPS){currentStake=0.70;step=MAX_STEPS;updateStats();}
   if(!rising&&!falling)return;
   if(Date.now()-lastSignalAt<1000)return;
   lastSignalAt=now;
