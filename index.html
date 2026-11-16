@@ -30,7 +30,7 @@ button:disabled{opacity:.4}.row{display:grid;grid-template-columns:1fr 1fr;gap:1
 <span class="pill">DERIV · DEMO FIRST · V2</span>
 <h1>Volatility 10 Rise / Fall Bot · V2</h1>
 <p>Automatic R_10 tick-momentum strategy. Three consecutive rising ticks signal RISE (CALL); three consecutive falling ticks signal FALL (PUT). Contract duration: 5 ticks.</p>
-<p class="warning">For a $10 starting balance: fixed $0.35 stake, NO martingale, stop after 2 consecutive losses (about $0.70), and stop loss -$0.70. No take-profit cap. AUTO is blocked below $10 USD. Demo testing only. Blue = BUY / RISE; white = SELL / FALL. DEMO testing only; no guaranteed edge.</p>
+<p class="warning">VIRTUAL $10 DEMO MODE: Deriv account balance is shown separately and does not control virtual risk. Virtual balance starts at $10.00; fixed $0.35 stake; stop at $9.30 or target $11.00. Dynamic profit lock remains active. Demo only; virtual results do not change your Deriv balance or guarantee live results.</p>
 </div>
 
 <div class="card">
@@ -72,14 +72,18 @@ button:disabled{opacity:.4}.row{display:grid;grid-template-columns:1fr 1fr;gap:1
 </div>
 
 <div class="card">
-<h2>Account and session</h2>
+<h2>Virtual $10 account</h2>
+<div style="margin:0 0 12px;background:#101923;border:1px solid #1677ff;border-radius:12px;padding:14px">
+<label>VIRTUAL $10 BALANCE</label><div class="stat green" id="virtualBalance" style="font-size:32px">$10.00</div>
+<p class="small">Start $10.00 · stop-loss floor $9.30 · take-profit target $11.00</p></div>
+<div class="row"><button class="secondary" id="resetVirtual">RESET VIRTUAL TO $10</button><div><label>Deriv balance (reference only)</label><div class="stat" id="balance">--</div></div></div>
 <div class="row">
-<div><label>Starting balance</label><div class="stat" id="initialBalance">--</div></div>
-<div><label>Current balance</label><div class="stat" id="balance">--</div></div>
+<div><label>Deriv starting balance</label><div class="stat" id="initialBalance">--</div></div>
+
 <div><label>Session profit / loss</label><div class="stat" id="pl">$0.00</div></div>
 <div><label>Wins / losses</label><div class="stat" id="wl">0 / 0</div></div>
 </div>
-<p>$10 CAPITAL MODE: fixed $0.35 stake · no martingale · stop after 2 consecutive losses · no take-profit cap · stop loss -$0.70</p>
+<p>Virtual risk: fixed $0.35 stake · stop at $9.30 (−$0.70) · take profit at $11.00 (+$1.00) · no martingale.</p>
 <p>Dynamic Profit Lock: activates at +$0.50 session profit and protects 50% of the highest session profit reached.</p>
 <div class="row"><div><label>Peak session profit</label><div class="stat green" id="peakProfit">$0.00</div></div><div><label>Protected profit floor</label><div class="stat" id="protectedProfit">OFF</div></div></div>
 <p id="openTrade">Open contract: none</p>
@@ -96,8 +100,10 @@ button:disabled{opacity:.4}.row{display:grid;grid-template-columns:1fr 1fr;gap:1
 const $=id=>document.getElementById(id);
 const BASE_STAKE=0.35,MAX_STEPS=0,DURATION=5,STOP_LOSS=0.70,SYMBOL="R_10";
 const PROFIT_LOCK_ACTIVATION=0.50,PROFIT_LOCK_RATIO=0.50;
+const VIRTUAL_START=10.00,VIRTUAL_STOP=9.30,VIRTUAL_TAKE_PROFIT=11.00;
 let ws=null,authorized=false,auto=false,balance=0,startBalance=0,currency="USD";
 let currentStake=BASE_STAKE,step=0,profitToday=0,wins=0,losses=0;
+let virtualBalance=VIRTUAL_START,virtualStopTriggered=false;
 let ticks=[],pending=false,contractId=null,contractSub=null,heartbeat=null,lastSignalAt=0;
 let consecutiveLosses=0,pauseUntil=0;
 let peakProfit=0,protectedProfit=0,profitLockActive=false,profitLockTriggered=false;
@@ -108,6 +114,8 @@ function log(message){
 }
 function setState(message){$("state").textContent=message;}
 function updateStats(){
+  $("virtualBalance").textContent="$"+virtualBalance.toFixed(2);
+  $("virtualBalance").className="stat "+(virtualBalance>=VIRTUAL_START?"green":"red");
   $("stake").textContent="$"+currentStake.toFixed(2);
   $("step").textContent=step+" / "+MAX_STEPS;
   $("pl").textContent=(profitToday>=0?"+$":"-$")+Math.abs(profitToday).toFixed(2);
@@ -248,6 +256,7 @@ async function connect(){
         if(contract.is_sold){
           const profit=Number(contract.profit)||0;
           profitToday+=profit;
+          virtualBalance=Number((virtualBalance+profit).toFixed(2));
           if(profit>0){wins++;currentStake=BASE_STAKE;step=0;consecutiveLosses=0;pauseUntil=0;}
           else{
             losses++;
@@ -269,14 +278,16 @@ async function connect(){
           if(contractSub){send({forget:contractSub});contractSub=null;}
           contractId=null;
           $("openTrade").textContent="Open contract: none";
-          if(profitLockActive&&profitToday<=protectedProfit){
-            profitLockTriggered=true;
-            stopAutomation("PROFIT LOCK HIT · protected +$"+protectedProfit.toFixed(2)+" · SESSION STOPPED");
-            $("start").disabled=true;
-            log("Dynamic Profit Lock triggered. Session profit fell to the protected floor; AUTO is locked for this session.");
-          }
-          else if(profitToday<=-STOP_LOSS){stopAutomation("STOP LOSS HIT · -$"+Math.abs(profitToday).toFixed(2)+" · AUTO OFF");$("start").disabled=true;log("Stop-loss limit reached. Trading stopped.");}
-          else if(auto){setState(pauseUntil>Date.now()?"LOSS STREAK PAUSE · 60 seconds":"AUTO ON · scanning next tick signal");}
+          if(virtualBalance<=VIRTUAL_STOP){
+            virtualStopTriggered=true;stopAutomation("VIRTUAL STOP LOSS HIT · $"+virtualBalance.toFixed(2)+" · SESSION LOCKED");$("start").disabled=true;
+            log("Virtual balance reached the $9.30 stop floor. AUTO locked until virtual balance is reset.");
+          }else if(virtualBalance>=VIRTUAL_TAKE_PROFIT){
+            virtualStopTriggered=true;stopAutomation("VIRTUAL TAKE PROFIT HIT · $"+virtualBalance.toFixed(2)+" · SESSION LOCKED");$("start").disabled=true;
+            log("Virtual balance reached the $11.00 target. AUTO locked until virtual balance is reset.");
+          }else if(profitLockActive&&profitToday<=protectedProfit){
+            profitLockTriggered=true;virtualStopTriggered=true;stopAutomation("VIRTUAL PROFIT LOCK HIT · protected +$"+protectedProfit.toFixed(2)+" · SESSION LOCKED");$("start").disabled=true;
+            log("Dynamic Profit Lock triggered. Virtual session profit fell to the protected floor; AUTO locked until reset.");
+          }else if(auto){setState(pauseUntil>Date.now()?"LOSS STREAK PAUSE · 60 seconds":"AUTO ON · scanning next tick signal");}
           else{setState("AUTO OFF · last contract settled");}
         }
       }
@@ -325,18 +336,22 @@ $("connect").addEventListener("click",connect);
 $("disconnect").addEventListener("click",disconnect);
 $("start").addEventListener("click",function(){
   if(!authorized)return;
-  if(profitLockTriggered){setState("PROFIT LOCK ALREADY HIT · refresh the page to begin a new session");return;}
-  if(currency!=="USD"||balance<10){
-    setState("START BLOCKED · USD balance must be at least $10");
-    log("Minimum starting capital is $10 USD. Current balance: "+balance.toFixed(2)+" "+currency+".");
-    return;
-  }
+  if(virtualStopTriggered||profitLockTriggered){setState("VIRTUAL SESSION STOPPED · press RESET VIRTUAL TO $10 before restarting");return;}
+  if(currency!=="USD"){setState("START BLOCKED · Deriv account currency must be USD");log("Virtual $10 mode requires a USD Deriv demo account.");return;}
   auto=true;$("start").disabled=true;$("stop").disabled=false;
   setState("AUTO ON · watching Volatility 10 ticks");
-  log("AUTO started · R_10 · 5 ticks · fixed $0.35 stake · no martingale · live payout filter: profit ≥$0.2864 and break-even ≤55% · stop loss -$0.70 · profit lock activates at +$0.50 and trails 50% of peak profit · starting capital $"+balance.toFixed(2)+" USD.");
+  log("AUTO started · VIRTUAL balance $"+virtualBalance.toFixed(2)+" · Deriv balance $"+balance.toFixed(2)+" (reference only) · R_10 · fixed $0.35 · 5 ticks · payout filter · virtual stop $9.30 · virtual target $11.00 · dynamic profit lock.");
   evaluateTicks();
 });
 $("stop").addEventListener("click",function(){stopAutomation("AUTO OFF");log("Automation stopped. Any open contract will still be monitored.");});
+$("resetVirtual").addEventListener("click",function(){
+  if(auto||pending||contractId!==null){setState("RESET BLOCKED · stop AUTO and wait for any open contract to settle");return;}
+  virtualBalance=VIRTUAL_START;profitToday=0;wins=0;losses=0;consecutiveLosses=0;pauseUntil=0;
+  peakProfit=0;protectedProfit=0;profitLockActive=false;profitLockTriggered=false;virtualStopTriggered=false;
+  currentStake=BASE_STAKE;step=0;updateStats();$("start").disabled=!authorized;
+  log("Virtual account reset to $10.00. Deriv account balance is unchanged.");
+  setState(authorized?"VIRTUAL $10 READY · AUTO OFF":"VIRTUAL $10 RESET · connect DEMO to trade");
+});
 updateStats();
 })(); 
 </script>
