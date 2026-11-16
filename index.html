@@ -27,10 +27,10 @@ button:disabled{opacity:.4}.row{display:grid;grid-template-columns:1fr 1fr;gap:1
 </head>
 <body>
 <div class="card">
-<span class="pill">DERIV · DEMO FIRST</span>
-<h1>Volatility 10 Rise / Fall Bot</h1>
+<span class="pill">DERIV · DEMO FIRST · V2</span>
+<h1>Volatility 10 Rise / Fall Bot · V2</h1>
 <p>Automatic R_10 tick-momentum strategy. Three consecutive rising ticks signal RISE (CALL); three consecutive falling ticks signal FALL (PUT). Contract duration: 5 ticks.</p>
-<p class="warning">Blue means BUY / RISE. White means SELL / FALL. Martingale progression and session limits are kept as requested. Test on DEMO only; this strategy has no guaranteed edge.</p>
+<p class="warning">V2 risk controls: +$10 take profit, -$5 stop loss, two-loss pause, and loss cooldowns. Blue = BUY / RISE; white = SELL / FALL. DEMO testing only; no guaranteed edge.</p>
 </div>
 
 <div class="card">
@@ -60,7 +60,7 @@ button:disabled{opacity:.4}.row{display:grid;grid-template-columns:1fr 1fr;gap:1
 <div class="row">
 <div><label>Base stake</label><div class="stat">$0.35</div></div>
 <div><label>Current stake</label><div class="stat" id="stake">$0.35</div></div>
-<div><label>Martingale step</label><div class="stat" id="step">0 / 3</div></div>
+<div><label>Martingale step</label><div class="stat" id="step">0 / 2</div></div>
 <div><label>Contract duration</label><div class="stat">5 ticks</div></div>
 </div>
 <div class="row" style="margin-top:12px">
@@ -78,7 +78,7 @@ button:disabled{opacity:.4}.row{display:grid;grid-template-columns:1fr 1fr;gap:1
 <div><label>Session profit / loss</label><div class="stat" id="pl">$0.00</div></div>
 <div><label>Wins / losses</label><div class="stat" id="wl">0 / 0</div></div>
 </div>
-<p>Take profit: +$3.00 · Stop loss: -$5.00</p>
+<p>V2 limits: take profit +$10.00 · stop loss -$5.00</p>
 <p id="openTrade">Open contract: none</p>
 </div>
 
@@ -91,10 +91,11 @@ button:disabled{opacity:.4}.row{display:grid;grid-template-columns:1fr 1fr;gap:1
 (function(){
 "use strict";
 const $=id=>document.getElementById(id);
-const BASE_STAKE=0.35,MAX_STEPS=3,DURATION=5,TAKE_PROFIT=3.0,STOP_LOSS=5.0,SYMBOL="R_10";
+const BASE_STAKE=0.35,MAX_STEPS=2,DURATION=5,TAKE_PROFIT=10.0,STOP_LOSS=5.0,SYMBOL="R_10";
 let ws=null,authorized=false,auto=false,balance=0,startBalance=0,currency="USD";
 let currentStake=BASE_STAKE,step=0,profitToday=0,wins=0,losses=0;
 let ticks=[],pending=false,contractId=null,contractSub=null,heartbeat=null,lastSignalAt=0;
+let consecutiveLosses=0,cooldownUntil=0,pauseUntil=0;
 
 function log(message){
   $("log").textContent+="\n"+new Date().toLocaleTimeString()+"  "+message;
@@ -221,8 +222,13 @@ async function connect(){
         if(contract.is_sold){
           const profit=Number(contract.profit)||0;
           profitToday+=profit;
-          if(profit>0){wins++;currentStake=BASE_STAKE;step=0;}
-          else{losses++;step++;currentStake=Number((BASE_STAKE*Math.pow(2,step)).toFixed(2));}
+          if(profit>0){wins++;currentStake=BASE_STAKE;step=0;consecutiveLosses=0;cooldownUntil=0;pauseUntil=0;}
+          else{
+            losses++;consecutiveLosses++;step=Math.min(step+1,MAX_STEPS);
+            currentStake=Number((BASE_STAKE*Math.pow(2,step)).toFixed(2));
+            if(consecutiveLosses>=2){pauseUntil=Date.now()+60000;cooldownUntil=pauseUntil;log("Two consecutive losses. Pausing new trades for 60 seconds; stake resets to base after the pause.");}
+            else{cooldownUntil=Date.now()+15000;log("Loss cooldown: waiting 15 seconds before the next entry.");}
+          }
           updateStats();
           log((profit>0?"WIN":"LOSS")+" · "+(profit>=0?"+":"")+"$"+profit.toFixed(2)+" · session "+(profitToday>=0?"+":"")+"$"+profitToday.toFixed(2));
           if(contractSub){send({forget:contractSub});contractSub=null;}
@@ -230,7 +236,7 @@ async function connect(){
           $("openTrade").textContent="Open contract: none";
           if(profitToday>=TAKE_PROFIT){stopAutomation("TAKE PROFIT HIT · +$"+profitToday.toFixed(2)+" · AUTO OFF");log("Take-profit limit reached. Trading stopped.");}
           else if(profitToday<=-STOP_LOSS){stopAutomation("STOP LOSS HIT · -$"+Math.abs(profitToday).toFixed(2)+" · AUTO OFF");log("Stop-loss limit reached. Trading stopped.");}
-          else if(auto){setState("AUTO ON · scanning next tick signal");}
+          else if(auto){setState(pauseUntil>Date.now()?"LOSS STREAK PAUSE · 60 seconds":"AUTO ON · scanning next tick signal");}
           else{setState("AUTO OFF · last contract settled");}
         }
       }
@@ -261,9 +267,12 @@ function evaluateTicks(){
   else if(falling){showSignal("PUT","Three consecutive downward ticks · FALL contract");}
   else{showSignal(null,"No three-tick direction confirmed");}
   if(!auto||!authorized||pending||contractId!==null)return;
+  const now=Date.now();
+  if(pauseUntil&&now>=pauseUntil){pauseUntil=0;cooldownUntil=0;consecutiveLosses=0;currentStake=BASE_STAKE;step=0;updateStats();log("60-second pause complete. Resuming with base stake $0.35.");}
+  if(now<cooldownUntil){setState("LOSS COOLDOWN · "+Math.ceil((cooldownUntil-now)/1000)+"s remaining");return;}
   if(profitToday>=TAKE_PROFIT){stopAutomation("TAKE PROFIT HIT · AUTO OFF");return;}
   if(profitToday<=-STOP_LOSS){stopAutomation("STOP LOSS HIT · AUTO OFF");return;}
-  if(step>=MAX_STEPS){log("Maximum martingale steps reached. Resetting to base stake.");currentStake=BASE_STAKE;step=0;updateStats();}
+  if(step>MAX_STEPS){currentStake=Number((BASE_STAKE*Math.pow(2,MAX_STEPS)).toFixed(2));step=MAX_STEPS;updateStats();}
   if(!rising&&!falling)return;
   const now=Date.now();
   if(now-lastSignalAt<1000)return;
