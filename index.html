@@ -305,7 +305,7 @@ $("connect").addEventListener("click",connect);
 $("disconnect").addEventListener("click",disconnect);
 $("start").addEventListener("click",function(){
   if(!authorized)return;
-  if(profitLockTriggered){setState("PROFIT LOCK ALREADY HIT · reconnect to begin a fresh session");return;}
+  if(profitLockTriggered){setState("PROFIT LOCK ALREADY HIT · refresh the page to begin a new session");return;}
   if(currency!=="USD"||balance<10){
     setState("START BLOCKED · USD balance must be at least $10");
     log("Minimum starting capital is $10 USD. Current balance: "+balance.toFixed(2)+" "+currency+".");
