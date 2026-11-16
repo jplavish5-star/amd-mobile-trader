@@ -33,9 +33,9 @@
 <div id="price">--<small id="symName">Waiting for market data</small></div>
 <label for="symbol">Market</label>
 <select id="symbol">
-<option value="R_100">Volatility 100 Index</option><option value="R_75">Volatility 75 Index</option><option value="R_50">Volatility 50 Index</option><option value="R_25">Volatility 25 Index</option><option value="R_10">Volatility 10 Index</option><option value="1HZ100V">Volatility 100 (1s) Index</option><option value="1HZ75V">Volatility 75 (1s) Index</option><option value="frxEURUSD">EUR/USD</option><option value="frxGBPUSD">GBP/USD</option><option value="frxUSDJPY">USD/JPY</option>
+<optgroup label="Synthetic Indices — tick trading"><option value="R_100">Volatility 100 Index</option><option value="R_75">Volatility 75 Index</option><option value="R_50">Volatility 50 Index</option><option value="R_25">Volatility 25 Index</option><option value="R_10">Volatility 10 Index</option><option value="1HZ100V">Volatility 100 (1s) Index</option><option value="1HZ75V">Volatility 75 (1s) Index</option></optgroup><optgroup label="Gold"><option value="frxXAUUSD">Gold / USD (XAUUSD)</option></optgroup><optgroup label="Forex"><option value="frxEURUSD">EUR/USD</option><option value="frxGBPUSD">GBP/USD</option><option value="frxUSDJPY">USD/JPY</option><option value="frxAUDUSD">AUD/USD</option><option value="frxUSDCAD">USD/CAD</option><option value="frxUSDCHF">USD/CHF</option><option value="frxNZDUSD">NZD/USD</option><option value="frxEURJPY">EUR/JPY</option><option value="frxGBPJPY">GBP/JPY</option></optgroup>
 </select>
-<button class="blue full" onclick="subscribeTicks()">GET LIVE PRICE</button>
+<button class="blue full" onclick="subscribeTicks()">GET LIVE PRICE</button><p class="muted">Gold and Forex are available for live-price monitoring. In this restored version, automated and manual tick-contract trading remains limited to Synthetic Indices; Gold/Forex minute-contract execution must be restored and verified separately before it is enabled.</p>
 </div>
 <div class="card">
 <label for="stake">Stake (account currency)</label><input id="stake" type="number" value="0.35" min="0.35" step="0.01">
@@ -54,7 +54,8 @@ function toggleAlerts(){alertsEnabled=!alertsEnabled;$('alertToggle').textConten
 function playAlert(){if(!alertsEnabled)return;try{const C=window.AudioContext||window.webkitAudioContext;if(!C)return;const a=new C(),o=a.createOscillator(),g=a.createGain();o.connect(g);g.connect(a.destination);o.frequency.value=880;g.gain.value=.06;o.start();o.stop(a.currentTime+.16);o.onended=()=>a.close();}catch(e){}}
 function copyDailyReport(){const elapsed=sessionStartedAt?Math.round((Date.now()-sessionStartedAt)/60000):0;const report=['AMD MOBILE TRADER — DEMO SESSION REPORT','Virtual start: '+(sessionStartBalance===null?'not set':sessionStartBalance.toFixed(2)+' '+currency),'Simulated balance: '+(currentBalance===null?'not set':currentBalance.toFixed(2)+' '+currency),'Session P/L: '+sessionPL.toFixed(2)+' '+currency,'Wins: '+wins,'Losses: '+losses,'Settled trades: '+(wins+losses),'Win rate: '+(wins+losses?Math.round(wins/(wins+losses)*100):0)+'%','Session duration: '+elapsed+' minutes','Last result: '+lastTradeSummary,'Auto scalper: '+(autoRunning?'ON':'OFF'),'Account mode: '+mode.toUpperCase(),'Reminder: DEMO results do not guarantee future profits.'].join('\n');if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(report).then(()=>{ $('dashboardStatus').textContent='Session report copied. Paste it into this chat when you want a review.';}).catch(()=>{ $('dashboardStatus').textContent='Could not copy automatically. Try again from Chrome.';});}else{$('dashboardStatus').textContent='Clipboard is unavailable in this browser.';}}
 function status(message,color='#252a33'){$('status').textContent=message;$('status').style.background=color;}
-function setTradeEnabled(on){$('callBtn').disabled=!on||autoRunning;$('putBtn').disabled=!on||autoRunning;$('autoStart').disabled=!on||autoRunning;$('autoStop').disabled=!autoRunning;}
+function isSyntheticTickMarket(){const s=$('symbol').value;return s.startsWith('R_')||s.startsWith('1HZ');}
+function setTradeEnabled(on){const supported=isSyntheticTickMarket();$('callBtn').disabled=!on||autoRunning||!supported;$('putBtn').disabled=!on||autoRunning||!supported;$('autoStart').disabled=!on||autoRunning||!supported;$('autoStop').disabled=!autoRunning;}
 function activeToken(){return (mode==='demo'?$ ('demoToken'):$('realToken')).value.trim();}
 function setMode(next){
  if(next===mode)return;
@@ -161,6 +162,7 @@ function subscribeTicks(){
  $('symName').textContent=symbol+' · requesting live price';log('Requested live ticks for '+symbol+'.');
 }
 function requestTrade(direction){
+ if(!isSyntheticTickMarket()){alert('Tick-contract trading is currently limited to Synthetic Indices. Gold and Forex are quote-only until their minute-contract engine is restored and DEMO-tested.');return;}
  if(!authorized||!ws||ws.readyState!==1){alert('Connect and authorize the selected account first.');return;}
  if(mode==='real'&&!confirm('Confirm REAL MONEY trade: '+direction+' '+$('symbol').value+' with stake '+$('stake').value+' '+currency+'?'))return;
  const stake=Number($('stake').value),duration=Number($('duration').value);
@@ -179,6 +181,7 @@ function updateAutoUI(message){
  $('callBtn').disabled=!authorized||autoRunning;$('putBtn').disabled=!authorized||autoRunning;
 }
 function startAuto(){
+ if(!isSyntheticTickMarket()){alert('Auto scalping is currently limited to Synthetic Indices. Gold and Forex minute-contract trading is not enabled in this restored version.');return;}
  if(mode!=='demo'){alert('Automatic scalping is locked to DEMO during testing.');return;}
  if(!authorized||!ws||ws.readyState!==1){alert('Connect your Demo account first.');return;}
  if(sessionStartBalance===null||!Number.isFinite(sessionStartBalance)){alert('Choose a $10 or $15 virtual starting balance and reconnect.');return;}
