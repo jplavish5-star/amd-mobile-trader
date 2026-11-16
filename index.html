@@ -40,7 +40,7 @@
 <button class="blue full" onclick="subscribeTicks()">GET LIVE PRICE</button>
 </div>
 <div class="card">
-<label for="stakeMode">Stake sizing for automated DEMO engines</label><select id="stakeMode"><option value="auto" selected>Automatic · 3% balance target, safety capped</option><option value="manual">Manual stake</option></select><label for="stake">Manual stake (account currency)</label><input id="stake" type="number" value="0.35" min="0.35" step="0.01"><div id="stakeInfo" class="muted">Automatic stake is active for the Auto Scalper and Gold DEMO Tester. Manual trades use the amount entered below.</div>
+<label for="stakeMode">Stake sizing for automated DEMO engines</label><select id="stakeMode"><option value="auto" selected>Automatic · 3% balance target, safety capped</option><option value="manual">Manual stake</option></select><label for="stake">Manual stake (account currency)</label><input id="stake" type="number" value="0.50" min="0.50" step="0.01"><div id="stakeInfo" class="muted">Automatic stake is active for the Auto Scalper and Gold DEMO Tester. Manual trades use the amount entered below.</div>
 <label for="duration">Contract duration</label><select id="duration"><option value="5m" selected>5 minutes</option><option value="10m">10 minutes</option><option value="15m">15 minutes</option></select><p id="marketNote" class="muted">Gold and Forex: minute-based options from 5 minutes. Market hours apply.</p>
 <div class="row"><button class="green" id="callBtn" onclick="requestTrade('RISE')" disabled>▲ RISE</button><button class="red" id="putBtn" onclick="requestTrade('FALL')" disabled>▼ FALL</button></div>
 <div id="tradeStatus" class="muted" style="margin-top:10px">Connect and authorize a Demo or Real account to enable trading.</div>
@@ -185,8 +185,8 @@ function updateMarketSettings(){
  sel.innerHTML=choices.map(x=>'<option value="'+x[0]+'">'+x[1]+'</option>').join('');
  sel.value=choices.some(x=>x[0]===current)?current:choices[0][0];
  $('marketNote').textContent=gold?'Gold / USD: minute-based options from 5 minutes. Gold follows market hours and may be unavailable on weekends.':'Forex: minute-based options from 5 minutes. Trading follows the currency pair market session and closes on weekends.';
- $('stake').min='0.35';
- if(!Number.isFinite(Number($('stake').value))||Number($('stake').value)<0.35)$('stake').value='0.35';
+ $('stake').min='0.50';
+ if(!Number.isFinite(Number($('stake').value))||Number($('stake').value)<0.50)$('stake').value='0.50';
  priceHistory=[];activeMinute=null;activeMinuteClose=null;fiveMinuteCandles=[];fiveMinuteBucket=null;testerHistoryReady=false;lastTesterSignalEpoch=null;
 }
 function subscribeTicks(){
@@ -203,18 +203,18 @@ function calculateAutoStake(){
  const start=Number(sessionStartBalance),balance=Number(currentBalance);
  if(!Number.isFinite(start)||start<=0||!Number.isFinite(balance)||balance<=0)return {ok:false,reason:'Virtual balance is unavailable. Reconnect DEMO.'};
  const cap=Math.min(start*0.05,balance*0.05);
- if(cap<0.35)return {ok:false,reason:'The 5% safety limit is below Deriv minimum stake 0.35. Auto trading is paused.'};
+ if(cap<0.50)return {ok:false,reason:'The 5% safety limit is below Deriv minimum stake 0.50. Auto trading is paused.'};
  const onePercent=Math.floor(balance*0.03*100)/100;
- return {ok:true,amount:Number(Math.min(cap,Math.max(0.35,onePercent)).toFixed(2)),cap:Number(cap.toFixed(2)),balance};
+ return {ok:true,amount:Number(Math.min(cap,Math.max(0.50,onePercent)).toFixed(2)),cap:Number(cap.toFixed(2)),balance};
 }
 function getTradeStake(engine){
  if((engine==='auto'||engine==='tester')&&mode==='demo'&&$('stakeMode').value==='auto'){
   const s=calculateAutoStake();if(!s.ok)return s;
-  $('stakeInfo').textContent='AUTO stake: '+s.amount.toFixed(2)+' '+currency+' · 3% target, minimum 0.35, maximum 5% of current and starting virtual balance.';
+  $('stakeInfo').textContent='AUTO stake: '+s.amount.toFixed(2)+' '+currency+' · 3% target, minimum 0.50, maximum 5% of current and starting virtual balance.';
   return {ok:true,amount:s.amount};
  }
  const amount=Number($('stake').value);
- if(!Number.isFinite(amount)||amount<0.35)return {ok:false,reason:'Manual stake must be at least 0.35 '+currency+'.'};
+ if(!Number.isFinite(amount)||amount<0.50)return {ok:false,reason:'Manual stake must be at least 0.50 '+currency+'.'};
  if((engine==='auto'||engine==='tester')&&mode==='demo'&&sessionStartBalance!==null){const balance=Number(currentBalance),cap=Math.min(sessionStartBalance*0.05,balance*0.05,engine==='tester'?0.50:Infinity);if(!Number.isFinite(cap)||amount>cap)return {ok:false,reason:'Stake exceeds the automatic engine safety cap of '+(Number.isFinite(cap)?cap.toFixed(2):'0.00')+' '+currency+'.'};}
  return {ok:true,amount};
 }
@@ -235,7 +235,7 @@ function requestTrade(direction,engine='manual'){
  if(mode==='real'&&!confirm('Confirm REAL MONEY trade: '+direction+' '+$('symbol').value+' with stake '+$('stake').value+' '+currency+'?'))return;
  const sizing=getTradeStake(engine);if(!sizing.ok){if(engine==='auto')stopAuto(sizing.reason);else if(engine==='tester')stopTester(sizing.reason);else alert(sizing.reason);return;}
  const stake=sizing.amount,durationValue=engine==='tester'?'5m':engine==='auto'?chooseAutoDuration():$('duration').value,unit=durationValue.endsWith('m')?'m':'t',duration=Number(durationValue.slice(0,-1));
- if(!Number.isFinite(stake)||stake<0.35){alert('Stake must be at least 0.35.');return;}
+ if(!Number.isFinite(stake)||stake<0.50){alert('Stake must be at least 0.50.');return;}
  if(!Number.isInteger(duration)||duration<5||unit!=='m'){alert('This strategy requires a supported minute-based contract (5 minutes or longer).');return;}
  if(pendingProposal||tradeInProgress){alert('A trade is already being processed. Please wait.');return;}
  const contractType=direction==='RISE'?'CALL':'PUT';
