@@ -303,7 +303,7 @@ function evaluateFastTickStrategy(quote){
  if(!Number.isFinite(fast)||!Number.isFinite(slow)||rsi===null)return;
  let direction=null;
  if(fast>slow&&rsi>=52&&rsi<=75)direction='RISE';else if(fast<slow&&rsi>=25&&rsi<=48)direction='FALL';
- if(!direction){lastFastSignal=null;return;}
+ if(!direction){lastFastSignal=null;$('autoState').textContent='AUTO ON · EMA5/13 + RSI14 active · no qualifying momentum setup on latest ticks.';return;}
  if(direction===lastFastSignal)return;
  lastFastSignal=direction;
  const stake=Number($('stake').value),riskCap=sessionStartBalance*0.05;
@@ -359,7 +359,7 @@ function onMarketTick(price,epoch){
  const minute=Math.floor(epoch/60);
  if(activeMinute===null){activeMinute=minute;activeMinuteClose=price;return;}
  if(minute!==activeMinute){
-  if(activeMinuteClose!==null){priceHistory.push(activeMinuteClose);if(priceHistory.length>160)priceHistory.shift();if(autoCooldown>0)autoCooldown--;evaluateStrategy();}
+  if(activeMinuteClose!==null){priceHistory.push(activeMinuteClose);if(priceHistory.length>160)priceHistory.shift();if(autoCooldown>0)autoCooldown--;}
   activeMinute=minute;
  }
  activeMinuteClose=price;
