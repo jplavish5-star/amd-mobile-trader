@@ -199,13 +199,16 @@ function subscribeTicks(){
  ws.send(JSON.stringify({ticks:symbol,subscribe:1}));
  $('symName').textContent=symbol+' · waiting for live tick';$('tradeStatus').textContent='Waiting for a live quote. Auto trading stays locked until this market sends a tick.';log('Requested 1-minute candle history and live ticks for '+symbol+'. Auto remains locked until live data arrives.');
 }
+const DERIV_MIN_STAKE=0.50;
 function calculateAutoStake(){
  const start=Number(sessionStartBalance),balance=Number(currentBalance);
  if(!Number.isFinite(start)||start<=0||!Number.isFinite(balance)||balance<=0)return {ok:false,reason:'Virtual balance is unavailable. Reconnect DEMO.'};
- const cap=Math.min(start*0.05,balance*0.05);
- if(cap<0.50)return {ok:false,reason:'The 5% safety limit is below Deriv minimum stake 0.50. Auto trading is paused.'};
- const onePercent=Math.floor(balance*0.03*100)/100;
- return {ok:true,amount:Number(Math.min(cap,Math.max(0.50,onePercent)).toFixed(2)),cap:Number(cap.toFixed(2)),balance};
+ const cap=Math.floor(Math.min(start*0.05,balance*0.05)*100+1e-8)/100;
+ if(cap+1e-8<DERIV_MIN_STAKE)return {ok:false,reason:'5% safety cap is below Deriv minimum stake $0.50. Auto trading is paused to protect the DEMO balance.'};
+ const target=Math.max(DERIV_MIN_STAKE,Math.floor(balance*0.03*100+1e-8)/100);
+ const amount=Math.min(cap,target);
+ if(!Number.isFinite(amount)||amount+1e-8<DERIV_MIN_STAKE)return {ok:false,reason:'Calculated stake is below Deriv minimum $0.50. No order sent.'};
+ return {ok:true,amount:Number(amount.toFixed(2)),cap:Number(cap.toFixed(2)),balance};
 }
 function getTradeStake(engine){
  if((engine==='auto'||engine==='tester')&&mode==='demo'&&$('stakeMode').value==='auto'){
@@ -234,7 +237,8 @@ function requestTrade(direction,engine='manual'){
  if(!marketDataReady||marketClosed){alert('No live price is available for this market. Wait for a live tick before trading.');return;}
  if(mode==='real'&&!confirm('Confirm REAL MONEY trade: '+direction+' '+$('symbol').value+' with stake '+$('stake').value+' '+currency+'?'))return;
  const sizing=getTradeStake(engine);if(!sizing.ok){if(engine==='auto')stopAuto(sizing.reason);else if(engine==='tester')stopTester(sizing.reason);else alert(sizing.reason);return;}
- const stake=sizing.amount,durationValue=engine==='tester'?'5m':engine==='auto'?chooseAutoDuration():$('duration').value,unit=durationValue.endsWith('m')?'m':'t',duration=Number(durationValue.slice(0,-1));
+ const stake=Number(sizing.amount),durationValue=engine==='tester'?'5m':engine==='auto'?chooseAutoDuration():$('duration').value,unit=durationValue.endsWith('m')?'m':'t',duration=Number(durationValue.slice(0,-1));
+  if((engine==='auto'||engine==='tester')&&mode==='demo'&&stake+1e-8<DERIV_MIN_STAKE){const reason='Order blocked: Deriv minimum stake is $0.50; calculated stake was '+stake.toFixed(2)+'.';if(engine==='auto')stopAuto(reason);else stopTester(reason);log(reason);return;}
  if(!Number.isFinite(stake)||stake<0.50){alert('Stake must be at least 0.50.');return;}
  if(!Number.isInteger(duration)||duration<5||unit!=='m'){alert('This strategy requires a supported minute-based contract (5 minutes or longer).');return;}
  if(pendingProposal||tradeInProgress){alert('A trade is already being processed. Please wait.');return;}
