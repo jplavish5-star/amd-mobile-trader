@@ -223,7 +223,7 @@ function calculateAutoStake(){
 function getTradeStake(engine){
  if((engine==='auto'||engine==='tester')&&mode==='demo'&&$('stakeMode').value==='auto'){
   const s=calculateAutoStake();if(!s.ok)return s;
-  $('stakeInfo').textContent='AUTO stake: '+s.amount.toFixed(2)+' '+currency+' · 3% target, minimum 0.50, maximum 5% of current and starting virtual balance.';
+  $('stakeInfo').textContent='AUTO stake: '+s.amount.toFixed(2)+' '+currency+' · 3% target with $0.50 Deriv minimum; never exceeds available DEMO balance.';
   return {ok:true,amount:s.amount};
  }
  const amount=Number($('stake').value);
@@ -264,7 +264,7 @@ function stopTester(reason){testerRunning=false;updateTesterUI(reason||'TEST OFF
 function updateAutoUI(message){
  $('autoState').textContent=message||(autoRunning?'AUTO ON · Waiting for signal.':'Automation is OFF.');
  $('autoStats').textContent='Session P/L: '+sessionPL.toFixed(2)+' '+currency+' · Wins: '+wins+' · Losses: '+losses+' · Consecutive losses: '+consecutiveLosses;
- if($('stakeMode')&&$('stakeMode').value==='auto'&&mode==='demo'){const s=calculateAutoStake();$('stakeInfo').textContent=s.ok?'Next AUTO stake: '+s.amount.toFixed(2)+' '+currency+' · 3% target, Deriv minimum $0.50; limited by available DEMO balance.':s.reason;}
+ if($('stakeMode')&&$('stakeMode').value==='auto'&&mode==='demo'){const s=calculateAutoStake();$('stakeInfo').textContent=s.ok?'Next AUTO stake: '+s.amount.toFixed(2)+' '+currency+' · 3% target with $0.50 Deriv minimum; limited by available DEMO balance.':s.reason;}
  $('autoStart').disabled=!authorized||autoRunning||testerRunning||!marketDataReady;$('autoStop').disabled=!autoRunning;
  $('callBtn').disabled=!authorized||autoRunning||testerRunning||!marketDataReady;$('putBtn').disabled=!authorized||autoRunning||testerRunning||!marketDataReady;updateTesterUI();
 }
