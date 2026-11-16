@@ -272,7 +272,7 @@ function evaluateTicks(){
   pending=true;
   setState("Signal confirmed · requesting "+(rising?"RISE":"FALL")+" proposal");
   log("Trend "+(rising?"UP":"DOWN")+" → buying "+contractType+" · stake $"+currentStake.toFixed(2));
-  send({proposal:1,amount:currentStake,basis:"stake",contract_type:contractType,currency:currency,duration:DURATION,duration_unit:"t",symbol:SYMBOL});
+  send({proposal:1,amount:currentStake,basis:"stake",contract_type:contractType,currency:currency,duration:DURATION,duration_unit:"t",underlying_symbol:SYMBOL,subscribe:1});
 }
 $("connect").addEventListener("click",connect);
 $("disconnect").addEventListener("click",disconnect);
