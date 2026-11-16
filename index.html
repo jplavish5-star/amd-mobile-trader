@@ -47,7 +47,7 @@ button:disabled{opacity:.4}.row{display:grid;grid-template-columns:1fr 1fr;gap:1
 <label>Deriv DEMO Personal Access Token (PAT)</label>
 <input id="token" type="password" autocomplete="off" placeholder="Paste your DEMO PAT">
 <label>Deriv App ID</label>
-<input id="appid" inputmode="numeric" placeholder="Your Deriv application App ID">
+<input id="appid" inputmode="text" autocomplete="off" placeholder="Paste your Deriv application App ID">
 <div class="row" style="margin-top:12px">
 <button class="connect" id="connect">CONNECT DEMO</button>
 <button class="secondary" id="disconnect" disabled>DISCONNECT</button>
@@ -141,7 +141,6 @@ function disconnect(){
 async function connect(){
   const token=$("token").value.trim(),app=$("appid").value.trim();
   if(!token||!app){alert("Enter your DEMO PAT and Deriv App ID.");return;}
-  if(!/^[0-9]+$/.test(app)){alert("Enter the numeric App ID from your Deriv application.");return;}
   disconnect();
   $("conn").textContent="Authenticating with Deriv…";
   $("connect").disabled=true;
