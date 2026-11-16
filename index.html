@@ -47,7 +47,7 @@
 <div class="card"><h3 style="margin:0 0 8px">META Historical Backtester</h3><p class="muted">Research-only historical replay. Compares four strategies on the same completed Deriv candles, with a chronological 70% training / 30% unseen holdout split. Shows estimated account results using an adjustable assumed payout; historical Deriv proposal payouts are not available, so this is not proof of actual past contract profitability.</p><div class="row"><div><label for="metaTimeframe">Candle timeframe</label><select id="metaTimeframe"><option value="60">1 minute</option><option value="300" selected>5 minutes</option><option value="900">15 minutes</option><option value="3600">1 hour</option></select></div><div><label for="metaHistory">History depth</label><select id="metaHistory"><option value="1000">1,000 candles</option><option value="3000">3,000 candles</option><option value="5000" selected>5,000 candles</option></select></div></div><div class="row"><div><label for="metaExpiry">Expiry length</label><select id="metaExpiry"><option value="1" selected>1 candle</option><option value="2">2 candles</option><option value="3">3 candles</option></select></div><div><label for="metaPayout">Assumed net win (% of stake)</label><select id="metaPayout"><option value="70">70%</option><option value="80">80%</option><option value="85" selected>85%</option><option value="90">90%</option></select></div></div><div class="row"><div><label for="metaStartBalance">Virtual starting balance</label><select id="metaStartBalance"><option value="10" selected>$10</option><option value="15">$15</option><option value="25">$25</option><option value="100">$100</option></select></div><div><label for="metaStake">Fixed simulated stake</label><select id="metaStake"><option value="0.10">$0.10</option><option value="0.25">$0.25</option><option value="0.35" selected>$0.35</option><option value="0.50">$0.50</option><option value="1.00">$1.00</option></select></div></div><button class="blue full" id="runBacktest" onclick="runMetaBacktest()">RUN META BACKTEST</button><div id="backtestResult" class="muted" style="margin-top:10px">Connect a Deriv DEMO account, select Gold, BTC or a Forex pair above, then run the historical test.</div><div class="dash-grid" style="margin-top:10px"><div class="metric"><span>TOP HOLDOUT STRATEGY</span><strong id="metaBest">--</strong></div><div class="metric"><span>HOLDOUT NET P/L</span><strong id="metaNet">--</strong></div><div class="metric"><span>HOLDOUT WIN RATE</span><strong id="metaWinRate">--</strong></div><div class="metric"><span>MAX DRAWDOWN</span><strong id="metaDrawdown">--</strong></div><div class="metric"><span>PROFIT FACTOR</span><strong id="metaPF">--</strong></div><div class="metric"><span>HOLDOUT TRADES</span><strong id="metaTrades">--</strong></div></div><label>Holdout equity curve (best candidate)</label><canvas id="metaEquity" width="640" height="180" style="width:100%;height:180px;background:#101319;border-radius:9px"></canvas><div id="metaLeaderboard" class="muted" style="margin-top:10px">The leaderboard will appear after a completed test.</div><button class="blue full" type="button" onclick="copyMetaReport()">COPY META BACKTEST REPORT</button><p class="muted">Important: entry is approximated at the next candle open; settlement is approximated at the selected expiry candle close. Assumed payout is only a scenario input. Fees, historical quote availability, latency, rejected contracts and intrabar price path are not known. A strategy is never automatically enabled for live trading.</p></div>
 <div class="card"><div id="log">Activity log\nWaiting for connection…</div></div>
 <script>
-let ws=null, mode='demo', authorized=false, currency='USD', tickSubId=null, contractSubs=new Set(), pendingProposal=null, proposalTimer=null, buyTimer=null, tradeRequestId=1000, buyConfirmationPending=false, marketDataReady=false, marketClosed=false,backtestPending=false,lastBacktestReport='',backtestBatch=[],backtestBatchCount=0,backtestSeenEpochs=new Set(),backtestOldestEpoch=null,backtestSymbol='',backtestGranularity=300,backtestTargetCandles=5000,backtestBatchLimit=5,fiveMinuteCandles=[],fiveMinuteBucket=null,testerHistoryReady=false,lastTesterSignalEpoch=null;
+let ws=null, mode='demo', authorized=false, connectionWanted=false, heartbeatTimer=null, pongTimer=null, reconnectTimer=null, reconnectAttempt=0, heartbeatPongs=0, currency='USD', tickSubId=null, contractSubs=new Set(), pendingProposal=null, proposalTimer=null, buyTimer=null, tradeRequestId=1000, buyConfirmationPending=false, marketDataReady=false, marketClosed=false,backtestPending=false,lastBacktestReport='',backtestBatch=[],backtestBatchCount=0,backtestSeenEpochs=new Set(),backtestOldestEpoch=null,backtestSymbol='',backtestGranularity=300,backtestTargetCandles=5000,backtestBatchLimit=5,fiveMinuteCandles=[],fiveMinuteBucket=null,testerHistoryReady=false,lastTesterSignalEpoch=null;
 let autoRunning=false,testerRunning=false,activeTradeEngine='manual',testerContractId=null,testerPL=0,testerWins=0,testerLosses=0,testerBreakeven=0,testerConsecutiveLosses=0,testerLastQuote='--',tradeInProgress=false,activeContractId=null,activeTradeMarket='Forex',marketStats={Gold:{wins:0,losses:0},Forex:{wins:0,losses:0},BTC:{wins:0,losses:0}},priceHistory=[],activeMinute=null,activeMinuteClose=null,autoCooldown=0,sessionStartBalance=null,currentBalance=null,accountBalance=null,sessionPL=0,wins=0,losses=0,consecutiveLosses=0,settledContractIds=new Set(),alertsEnabled=false,sessionStartedAt=null,lastTradeSummary='No completed trades yet';
 const $=id=>document.getElementById(id);
 function log(message){const el=$('log');el.textContent+='\n'+new Date().toLocaleTimeString()+'  '+message;el.scrollTop=el.scrollHeight}
@@ -67,18 +67,46 @@ function setMode(next){
  log('Mode changed to '+mode.toUpperCase()+'. Reconnect to authorize this account.');
 }
 function disconnect(showLog=true){
+ connectionWanted=false;clearInterval(heartbeatTimer);heartbeatTimer=null;clearTimeout(pongTimer);pongTimer=null;clearTimeout(reconnectTimer);reconnectTimer=null;reconnectAttempt=0;heartbeatPongs=0;
  autoRunning=false;testerRunning=false;if(tradeInProgress||activeContractId!==null){$('dashboardStatus').textContent='Connection interrupted during a trade. Reconnect and let the bot reconcile open positions before trusting session totals.';}updateAutoUI();
  if(ws){const old=ws;ws=null;old.onclose=null;try{old.close();}catch(e){}}
  authorized=false;tickSubId=null;contractSubs.clear();marketDataReady=false;marketClosed=false;setTradeEnabled(false);
  $('virtualStart').disabled=false;
  if(showLog)log('Disconnected.');
 }
-async function connect(){
+function scheduleReconnect(){
+ if(!connectionWanted||reconnectTimer)return;
+ if(!navigator.onLine){status('🟡 Waiting for internet connection…','#65420e');$('tradeStatus').textContent='Internet connection unavailable. The bot will retry when the phone is online.';return;}
+ const delay=Math.min(30000,1000*Math.pow(2,Math.min(reconnectAttempt,5)))+Math.floor(Math.random()*500);
+ reconnectAttempt++;
+ status('🟡 Connection lost · retrying in '+Math.ceil(delay/1000)+'s…','#65420e');
+ $('tradeStatus').textContent='Connection lost. Reconnecting securely with a fresh Deriv OTP. Automation remains OFF until you manually restart it.';
+ log('Reconnect scheduled in '+Math.ceil(delay/1000)+' seconds. No trades will be sent during recovery.');
+ reconnectTimer=setTimeout(()=>{reconnectTimer=null;if(connectionWanted)connect(true);},delay);
+}
+function startHeartbeat(socket){
+ clearInterval(heartbeatTimer);clearTimeout(pongTimer);heartbeatPongs=0;
+ const sendPing=()=>{
+  if(ws!==socket||socket.readyState!==WebSocket.OPEN)return;
+  try{
+   socket.send(JSON.stringify({ping:1,req_id:900001}));
+   clearTimeout(pongTimer);
+   pongTimer=setTimeout(()=>{
+    if(ws!==socket)return;
+    log('Heartbeat timeout · Deriv did not answer ping. Closing stale socket to trigger safe recovery.');
+    try{socket.close();}catch(e){}
+   },15000);
+  }catch(e){log('Heartbeat send failed: '+(e?.message||'unknown error'));try{socket.close();}catch(ignore){}}
+ };
+ sendPing();
+ heartbeatTimer=setInterval(sendPing,30000);
+}
+async function connect(isRecovery=false){
  const appId=$('appId').value.trim(),token=activeToken();
  if(!/^[A-Za-z0-9]+$/.test(appId)){alert('Enter the App ID shown on your Deriv PAT application.');return;}
  if(!token){alert('Enter the API token for the selected '+mode.toUpperCase()+' account.');return;}
- if(mode==='real'&&!confirm('You are connecting a REAL account. Trades may use real money. Continue?'))return;
- disconnect(false);
+ if(mode==='real'&&!isRecovery&&!confirm('You are connecting a REAL account. Trades may use real money. Continue?'))return;
+ disconnect(false);connectionWanted=true;
  if(sessionStartBalance===null){sessionStartBalance=Number($('virtualStart').value);currentBalance=sessionStartBalance;sessionPL=0;wins=0;losses=0;consecutiveLosses=0;marketStats={Gold:{wins:0,losses:0},Forex:{wins:0,losses:0},BTC:{wins:0,losses:0}};settledContractIds=new Set();sessionStartedAt=Date.now();lastTradeSummary='No completed trades yet';}else{currentBalance=sessionStartBalance+sessionPL;}accountBalance=null;$('marketBreakdown').textContent='By market · Gold: '+marketStats.Gold.wins+'W/'+marketStats.Gold.losses+'L · Forex: '+marketStats.Forex.wins+'W/'+marketStats.Forex.losses+'L · BTC: '+marketStats.BTC.wins+'W/'+marketStats.BTC.losses+'L';$('lastResult').textContent=lastTradeSummary;$('virtualStart').disabled=true;$('currentBalance').textContent=currentBalance.toFixed(2)+' USD';$('initialBalance').textContent=sessionStartBalance.toFixed(2)+' USD';$('sessionPL').textContent=sessionPL.toFixed(2)+' USD';$('winsCount').textContent=String(wins);$('lossesCount').textContent=String(losses);$('tradesCount').textContent=String(wins+losses);$('winRate').textContent=(wins+losses?Math.round(wins/(wins+losses)*100):0)+'%';
  ws=null;marketDataReady=false;marketClosed=false;status('🟡 Authenticating with Deriv…','#65420e');$('balance').textContent='Balance: --';
  $('connectBtn').disabled=true;log('Requesting '+mode.toUpperCase()+' account access…');
@@ -115,10 +143,11 @@ async function connect(){
   status('🟡 Opening secure '+mode.toUpperCase()+' connection…','#65420e');
   socket.onopen=()=>{
    if(ws!==socket)return;
-   authorized=true;setTradeEnabled(true);
-   status('🟢 '+mode.toUpperCase()+' account connected','#12452b');
-   $('tradeStatus').textContent='Secure '+mode.toUpperCase()+' connection established. Trades use '+currency+'.';
-   log('Secure WebSocket connected. Requesting balance and market data…');
+   authorized=true;setTradeEnabled(false);
+   status('🟡 '+mode.toUpperCase()+' socket open · verifying account…','#65420e');
+   $('tradeStatus').textContent='Secure socket opened. Verifying account balance and live market feed…';
+   startHeartbeat(socket);
+   log('Secure WebSocket opened. Verifying account and requesting market data…');
    socket.send(JSON.stringify({balance:1,subscribe:1,req_id:1}));
    socket.send(JSON.stringify({portfolio:1,req_id:2}));
    subscribeTicks();
@@ -126,10 +155,11 @@ async function connect(){
   socket.onmessage=event=>{
    if(ws!==socket)return;
    let data;try{data=JSON.parse(event.data)}catch(e){log('Received unreadable server response.');return;}
+   if(data.msg_type==='ping'){clearTimeout(pongTimer);pongTimer=null;heartbeatPongs++;if(heartbeatPongs>=2)reconnectAttempt=0;}
    if(data.error){const failedReqId=Number(data.req_id||data.echo_req?.req_id||0);const msg=data.error.message||'Unknown API error';if(pendingProposal&&failedReqId===tradeRequestId){const failedEngine=pendingProposal.engine;clearTimeout(proposalTimer);proposalTimer=null;pendingProposal=null;tradeInProgress=false;autoCooldown=2;if(failedEngine==='tester')updateTesterUI('Deriv rejected the quote: '+msg);else $('tradeStatus').textContent='Deriv rejected the quote: '+msg;updateAutoUI();}if(buyConfirmationPending&&failedReqId===tradeRequestId){clearTimeout(buyTimer);buyTimer=null;buyConfirmationPending=false;tradeInProgress=false;activeContractId=null;autoCooldown=2;log('Deriv explicitly rejected the pending buy request: '+msg);if(activeTradeEngine==='tester')updateTesterUI('Deriv rejected the buy request: '+msg);else $('tradeStatus').textContent='Deriv rejected the buy request: '+msg;updateAutoUI();}if(data.echo_req?.req_id===32||data.req_id===32){finishBacktest('Historical data request failed: '+msg+'. Retry when Deriv market data is available.');}log('Deriv API error: '+msg);$('tradeStatus').textContent=msg;if(/market.*closed|closed.*market|market is presently closed/i.test(msg)){marketClosed=true;marketDataReady=false;stopAuto('AUTO BLOCKED · This market is closed. Select an open market and press GET LIVE PRICE.');stopTester('TEST BLOCKED · This market is closed. Choose an open market before restarting.');status('⚠️ Selected market is closed','#65420e');setTradeEnabled(false);}return;}
    if(data.msg_type==='balance'&&data.balance){
     currency=data.balance.currency||currency;
-    accountBalance=Number(data.balance.balance);$('balance').textContent='Deriv '+mode.toUpperCase()+' balance: '+accountBalance.toFixed(2)+' '+currency+' · '+(account.loginid||account.id);$('currentBalance').textContent=currentBalance.toFixed(2)+' '+currency;$('initialBalance').textContent=sessionStartBalance.toFixed(2)+' '+currency;updateAutoUI();
+    accountBalance=Number(data.balance.balance);$('balance').textContent='Deriv '+mode.toUpperCase()+' balance: '+accountBalance.toFixed(2)+' '+currency+' · '+(account.loginid||account.id);$('currentBalance').textContent=currentBalance.toFixed(2)+' '+currency;$('initialBalance').textContent=sessionStartBalance.toFixed(2)+' '+currency;status('🟢 '+mode.toUpperCase()+' account verified','#12452b');$('tradeStatus').textContent='Account balance verified. Waiting for live market data before enabling trading.';updateAutoUI();
    }
    if(data.msg_type==='portfolio'&&data.portfolio&&Array.isArray(data.portfolio.contracts)){
     const open=data.portfolio.contracts;
@@ -169,10 +199,10 @@ async function connect(){
    }
   };
   socket.onerror=event=>{if(ws===socket){status('❌ WebSocket connection error','#641f2a');log('Secure WebSocket error · readyState '+socket.readyState+'. Check network; connection may close without a detailed browser error.');}};
-  socket.onclose=event=>{if(ws===socket){ws=null;authorized=false;autoRunning=false;clearTimeout(proposalTimer);proposalTimer=null;if(buyConfirmationPending){$('dashboardStatus').textContent='UNCONFIRMED ORDER · Connection dropped before Deriv confirmed the buy. Reconnect and check portfolio/account history; do not restart automation yet.';log('Connection closed while buy confirmation was pending. Trade outcome is uncertain; automation remains blocked.');}else if(activeContractId!==null){$('dashboardStatus').textContent='WARNING: connection dropped during an open trade. Reconnect to recover its settlement; session totals may be incomplete until reconciled.';}else{pendingProposal=null;tradeInProgress=false;}updateAutoUI(marketClosed?'AUTO BLOCKED · Selected market is closed. Reconnect and choose an open market.':'Automation stopped because the connection closed.');setTradeEnabled(false);status(marketClosed?'⚠️ Market closed · disconnected':'⚪ Disconnected',marketClosed?'#65420e':'#252a33');$('tradeStatus').textContent=marketClosed?'Gold is closed. Choose an open Forex pair, reconnect, then press GET LIVE PRICE.':'Disconnected. Reconnect to trade.';log('Connection closed · code '+event.code+' · reason '+(event.reason||'not supplied')+'.'+(marketClosed?' Market closure was reported immediately before disconnect.':''));}};
+  socket.onclose=event=>{if(ws===socket){ws=null;authorized=false;clearInterval(heartbeatTimer);heartbeatTimer=null;clearTimeout(pongTimer);pongTimer=null;autoRunning=false;clearTimeout(proposalTimer);proposalTimer=null;if(buyConfirmationPending){$('dashboardStatus').textContent='UNCONFIRMED ORDER · Connection dropped before Deriv confirmed the buy. Reconnect and check portfolio/account history; do not restart automation yet.';log('Connection closed while buy confirmation was pending. Trade outcome is uncertain; automation remains blocked.');}else if(activeContractId!==null){$('dashboardStatus').textContent='WARNING: connection dropped during an open trade. Reconnect to recover its settlement; session totals may be incomplete until reconciled.';}else{pendingProposal=null;tradeInProgress=false;}updateAutoUI(marketClosed?'AUTO BLOCKED · Selected market is closed. Reconnect and choose an open market.':'Automation stopped because the connection closed.');setTradeEnabled(false);status(marketClosed?'⚠️ Market closed · disconnected':'⚪ Disconnected',marketClosed?'#65420e':'#252a33');$('tradeStatus').textContent=marketClosed?'Gold is closed. Choose an open Forex pair, reconnect, then press GET LIVE PRICE.':'Disconnected. Reconnect to trade.';log('Connection closed · code '+event.code+' · reason '+(event.reason||'not supplied')+'.'+(marketClosed?' Market closure was reported immediately before disconnect.':''));scheduleReconnect();}};
  }catch(error){
   authorized=false;setTradeEnabled(false);status('❌ Connection failed','#641f2a');
-  const message=error?.message||'Unknown connection error';log(message);$('tradeStatus').textContent=message;
+  const message=error?.message||'Unknown connection error';log(message);$('tradeStatus').textContent=message;if(connectionWanted)scheduleReconnect();
  }finally{$('connectBtn').disabled=false;}
 }
 function isGold(){return $('symbol').value==='frxXAUUSD';}
