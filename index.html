@@ -148,7 +148,13 @@ function loadTestState(){
     const saved=JSON.parse(raw);
     if(saved&&saved.version===1){
       testState=Object.assign(testState,saved);
-      testModeActive=testState.status==="paused"||testState.status==="running";
+      if(testState.status==="running")testState.status="paused";
+      testModeActive=testState.status==="paused";
+      profitToday=Number(testState.cycleProfit)||0;
+      virtualBalance=Number(testState.cycleBalance)||VIRTUAL_START;
+      peakProfit=Number(testState.cyclePeakProfit)||0;
+      protectedProfit=Number(testState.cycleProtectedProfit)||0;
+      profitLockActive=!!testState.cycleProfitLockActive;
       if(testState.openContractId!==null)contractId=Number(testState.openContractId);
     }
   }catch(e){log("Saved TEST record could not be read; starting with a blank test record.");}
@@ -161,7 +167,7 @@ function renderTestStats(){
   $("testProfit").className="stat "+(testState.totalProfit>=0?"green":"red");
   $("testWL").textContent=testState.wins+" / "+testState.losses;
   $("testCycles").textContent=testState.cyclesWon+" / "+testState.cyclesLost;
-  $("testCycle").textContent=testState.cycleNumber+" / 20";
+  $("testCycle").textContent="Cycle "+testState.cycleNumber;
   $("testDrawdown").textContent="-$"+testState.maxDrawdown.toFixed(2)+" at trade "+(testState.worstDrawdownTrade||"—");
   $("testStatus").textContent=testState.status.toUpperCase();
   $("testStart").textContent=(testState.status==="paused"||testState.status==="running")?"RESUME TEST":"TEST 200 TRADES (DEMO ONLY)";
@@ -347,6 +353,14 @@ async function connect(){
             profitLockActive=true;
             protectedProfit=Math.max(protectedProfit,peakProfit*PROFIT_LOCK_RATIO);
           }
+          if(testModeActive){
+            testState.cyclePeakProfit=peakProfit;
+            testState.cycleProtectedProfit=protectedProfit;
+            testState.cycleProfitLockActive=profitLockActive;
+            testState.cycleProfit=profitToday;
+            testState.cycleBalance=virtualBalance;
+            saveTestState();
+          }
           updateStats();
           log((profit>0?"WIN":"LOSS")+" · "+(profit>=0?"+":"")+"$"+profit.toFixed(2)+" · session "+(profitToday>=0?"+":"")+"$"+profitToday.toFixed(2));
           if(contractSub){send({forget:contractSub});contractSub=null;}
@@ -368,7 +382,7 @@ async function connect(){
                 log("TEST COMPLETE · 200 settled trades. Review the full report.");
               }else{
                 virtualBalance=VIRTUAL_START;profitToday=0;peakProfit=0;protectedProfit=0;profitLockActive=false;profitLockTriggered=false;virtualStopTriggered=false;consecutiveLosses=0;pauseUntil=0;currentStake=BASE_STAKE;step=0;
-                testState.cycleBalance=VIRTUAL_START;testState.cycleProfit=0;testState.status="running";
+                testState.cycleBalance=VIRTUAL_START;testState.cycleProfit=0;testState.cyclePeakProfit=0;testState.cycleProtectedProfit=0;testState.cycleProfitLockActive=false;testState.status="running";
                 updateStats();saveAndRenderTest();
                 log("New TEST cycle "+testState.cycleNumber+" started at virtual $10.00.");
                 if(auto)setState("TEST RUNNING · cycle "+testState.cycleNumber+" · scanning R_10");
@@ -456,7 +470,7 @@ $("testStart").addEventListener("click",function(){
   if(auto||pending||contractId!==null){setState("TEST BLOCKED · wait for AUTO/open contract to stop first");return;}
   if(testState.status==="completed"||testState.status==="stopped"||testState.status==="new"){
     if(testState.status!=="new"&&!confirm("Start a NEW 200-trade test and replace the saved test record?"))return;
-    testState={version:1,status:"paused",tradeCount:0,wins:0,losses:0,totalProfit:0,cyclesWon:0,cyclesLost:0,cycleNumber:1,cycleBalance:VIRTUAL_START,cycleProfit:0,peakTotalProfit:0,maxDrawdown:0,worstDrawdownTrade:0,openContractId:null};
+    testState={version:1,status:"paused",tradeCount:0,wins:0,losses:0,totalProfit:0,cyclesWon:0,cyclesLost:0,cycleNumber:1,cycleBalance:VIRTUAL_START,cycleProfit:0,cyclePeakProfit:0,cycleProtectedProfit:0,cycleProfitLockActive:false,peakTotalProfit:0,maxDrawdown:0,worstDrawdownTrade:0,openContractId:null};
     testModeActive=true;virtualBalance=VIRTUAL_START;profitToday=0;wins=0;losses=0;consecutiveLosses=0;pauseUntil=0;peakProfit=0;protectedProfit=0;profitLockActive=false;profitLockTriggered=false;virtualStopTriggered=false;currentStake=BASE_STAKE;step=0;updateStats();
     log("New TEST 200 started · DEMO only · $10 cycle · $0.35 fixed stake.");
   }else{
@@ -477,11 +491,11 @@ $("testPause").addEventListener("click",function(){
 $("testReset").addEventListener("click",function(){
   if(auto||pending||contractId!==null){setState("RESET BLOCKED · pause test and wait for open contract to settle");return;}
   if(!confirm("Permanently clear the saved TEST 200 record on this browser?"))return;
-  testState={version:1,status:"new",tradeCount:0,wins:0,losses:0,totalProfit:0,cyclesWon:0,cyclesLost:0,cycleNumber:1,cycleBalance:VIRTUAL_START,cycleProfit:0,peakTotalProfit:0,maxDrawdown:0,worstDrawdownTrade:0,openContractId:null};
+  testState={version:1,status:"new",tradeCount:0,wins:0,losses:0,totalProfit:0,cyclesWon:0,cyclesLost:0,cycleNumber:1,cycleBalance:VIRTUAL_START,cycleProfit:0,cyclePeakProfit:0,cycleProtectedProfit:0,cycleProfitLockActive:false,peakTotalProfit:0,maxDrawdown:0,worstDrawdownTrade:0,openContractId:null};
   testModeActive=false;saveAndRenderTest();log("Saved TEST record cleared.");
 });
 $("resetVirtual").addEventListener("click",function(){
-  if(auto||pending||contractId!==null){setState("RESET BLOCKED · stop AUTO and wait for any open contract to settle");return;}
+  if(auto||pending||contractId!==null||testModeActive){setState("RESET BLOCKED · finish or reset the TEST mode first");return;}
   virtualBalance=VIRTUAL_START;profitToday=0;wins=0;losses=0;consecutiveLosses=0;pauseUntil=0;
   peakProfit=0;protectedProfit=0;profitLockActive=false;profitLockTriggered=false;virtualStopTriggered=false;
   currentStake=BASE_STAKE;step=0;updateStats();$("start").disabled=!authorized;
