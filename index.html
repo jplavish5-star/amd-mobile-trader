@@ -406,7 +406,9 @@ function onMarketTick(price,epoch){
 
 $('symbol').addEventListener('change',()=>{updateMarketSettings();if(ws&&ws.readyState===1)subscribeTicks();});
 updateMarketSettings();
-window.addEventListener('beforeunload',()=>{if(ws)ws.close();});
+window.addEventListener('online',()=>{if(connectionWanted&&!ws){log('Internet restored. Resuming secure connection recovery…');scheduleReconnect();}});
+window.addEventListener('offline',()=>{if(connectionWanted){status('🟡 Internet unavailable · waiting to reconnect','#65420e');log('Phone went offline. No trades will be opened; reconnect will resume when internet returns.');}});
+window.addEventListener('beforeunload',()=>{connectionWanted=false;clearInterval(heartbeatTimer);clearTimeout(pongTimer);clearTimeout(reconnectTimer);if(ws)ws.close();});
 </script>
 </body>
 </html>
