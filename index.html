@@ -67,7 +67,7 @@ button:disabled{opacity:.4}.row{display:grid;grid-template-columns:1fr 1fr;gap:1
 <button class="connect" id="start" disabled>START AUTO</button>
 <button class="stop" id="stop" disabled>STOP AUTO</button>
 </div>
-<p id="payoutStatus">Payout filter: waiting for a live Deriv quote · minimum profit $0.29 · break-even ≤55%</p>
+<p id="payoutStatus">Payout filter: waiting for a live Deriv quote · minimum profit $0.27 · break-even ≤57%</p>
 <p id="state">AUTO OFF</p>
 </div>
 
@@ -231,9 +231,9 @@ async function connect(){
           setState("TRADE SKIPPED · invalid payout quote");
         }else{
           $("payoutStatus").textContent="Live quote · payout $"+quotedPayout.toFixed(2)+" · profit $"+quotedProfit.toFixed(2)+" · break-even "+breakEven.toFixed(1)+"%";
-          if(quotedProfit<0.2864||breakEven>55){
+          if(quotedProfit<0.27||breakEven>57){
             pending=false;
-            log("SKIPPED - Payout $"+quotedPayout.toFixed(2)+", profit $"+quotedProfit.toFixed(2)+", BE "+breakEven.toFixed(1)+"% · filter requires profit ≥$0.2864 and BE ≤55%.");
+            log("SKIPPED - Payout $"+quotedPayout.toFixed(2)+", profit $"+quotedProfit.toFixed(2)+", BE "+breakEven.toFixed(1)+"% · filter requires profit ≥$0.27 and BE ≤57%.");
             setState("TRADE SKIPPED · payout filter");
           }else{
             log("PAYOUT APPROVED · payout $"+quotedPayout.toFixed(2)+" · profit $"+quotedProfit.toFixed(2)+" · break-even "+breakEven.toFixed(1)+"%.");
