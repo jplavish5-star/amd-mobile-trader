@@ -98,7 +98,8 @@ button:disabled{opacity:.4}.row{display:grid;grid-template-columns:1fr 1fr;gap:1
 (function(){
 "use strict";
 const $=id=>document.getElementById(id);
-const BASE_STAKE=0.35,MAX_STEPS=0,DURATION=5,STOP_LOSS=0.70,SYMBOL="R_10";
+const BASE_STAKE=0.35,MAX_STEPS=0,DURATION=5,SYMBOL="R_10";
+const LOSS_COOLDOWN_MS=60000;
 const PROFIT_LOCK_ACTIVATION=0.50,PROFIT_LOCK_RATIO=0.50;
 const VIRTUAL_START=10.00,VIRTUAL_STOP=9.30,VIRTUAL_TAKE_PROFIT=11.00;
 let ws=null,authorized=false,auto=false,balance=0,startBalance=0,currency="USD";
@@ -264,8 +265,9 @@ async function connect(){
             currentStake=BASE_STAKE;
             step=0;
             if(consecutiveLosses>=2){
-              log("Two consecutive losses on the $10 plan. Stopping AUTO for this session; no martingale.");
-              stopAutomation("TWO CONSECUTIVE LOSSES · SESSION STOPPED");
+              pauseUntil=Date.now()+LOSS_COOLDOWN_MS;
+              log("Two consecutive losses. PAUSED 60s - cooling down; AUTO will resume automatically.");
+              setState("PAUSED 60s - cooling down");
             }
           }
           peakProfit=Math.max(peakProfit,profitToday);
@@ -287,7 +289,7 @@ async function connect(){
           }else if(profitLockActive&&profitToday<=protectedProfit){
             profitLockTriggered=true;virtualStopTriggered=true;stopAutomation("VIRTUAL PROFIT LOCK HIT · protected +$"+protectedProfit.toFixed(2)+" · SESSION LOCKED");$("start").disabled=true;
             log("Dynamic Profit Lock triggered. Virtual session profit fell to the protected floor; AUTO locked until reset.");
-          }else if(auto){setState(pauseUntil>Date.now()?"LOSS STREAK PAUSE · 60 seconds":"AUTO ON · scanning next tick signal");}
+          }else if(auto){setState(pauseUntil>Date.now()?"PAUSED 60s - cooling down":"AUTO ON · scanning next tick signal");}
           else{setState("AUTO OFF · last contract settled");}
         }
       }
@@ -319,9 +321,8 @@ function evaluateTicks(){
   else{showSignal(null,"No three-tick direction confirmed");}
   if(!auto||!authorized||pending||contractId!==null)return;
   const now=Date.now();
-  if(pauseUntil&&now>=pauseUntil){pauseUntil=0;consecutiveLosses=0;currentStake=BASE_STAKE;step=0;updateStats();log("Pause complete. Reset to fixed stake $0.35.");}
-  if(pauseUntil&&now<pauseUntil){setState("TWO-LOSS PAUSE · "+Math.ceil((pauseUntil-now)/1000)+"s remaining");return;}
-  if(profitToday<=-STOP_LOSS){stopAutomation("STOP LOSS HIT · AUTO OFF");return;}
+  if(pauseUntil&&now>=pauseUntil){pauseUntil=0;consecutiveLosses=0;currentStake=BASE_STAKE;step=0;updateStats();log("60-second cooldown complete. AUTO-RESUME · fixed stake $0.35.");setState("AUTO ON · resumed after cooldown");}
+  if(pauseUntil&&now<pauseUntil){setState("PAUSED 60s - cooling down · "+Math.ceil((pauseUntil-now)/1000)+"s remaining");return;}
   if(step>MAX_STEPS){currentStake=BASE_STAKE;step=0;updateStats();}
   if(!rising&&!falling)return;
   if(Date.now()-lastSignalAt<1000)return;
