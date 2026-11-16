@@ -148,6 +148,7 @@ function loadTestState(){
     const saved=JSON.parse(raw);
     if(saved&&saved.version===1){
       testState=Object.assign(testState,saved);
+      if(typeof testState.firstCycleCheck!=="boolean"&&testState.tradeCount===0)testState.firstCycleCheck=true;
       if(testState.status==="running")testState.status="paused";
       testModeActive=testState.status==="paused";
       profitToday=Number(testState.cycleProfit)||0;
@@ -382,10 +383,16 @@ async function connect(){
                 log("TEST COMPLETE · 200 settled trades. Review the full report.");
               }else{
                 virtualBalance=VIRTUAL_START;profitToday=0;peakProfit=0;protectedProfit=0;profitLockActive=false;profitLockTriggered=false;virtualStopTriggered=false;consecutiveLosses=0;pauseUntil=0;currentStake=BASE_STAKE;step=0;
-                testState.cycleBalance=VIRTUAL_START;testState.cycleProfit=0;testState.cyclePeakProfit=0;testState.cycleProtectedProfit=0;testState.cycleProfitLockActive=false;testState.status="running";
+                testState.cycleBalance=VIRTUAL_START;testState.cycleProfit=0;testState.cyclePeakProfit=0;testState.cycleProtectedProfit=0;testState.cycleProfitLockActive=false;
+                if(testState.firstCycleCheck){
+                  testState.firstCycleCheck=false;testState.status="paused";stopAutomation("FIRST TEST CYCLE COMPLETE · review the result, then RESUME TEST");
+                  log("FIRST CYCLE CHECK: test paused after one complete cycle. Review the cycle result before resuming.");
+                }else{
+                  testState.status=auto?"running":"paused";
+                  if(auto)setState("TEST RUNNING · cycle "+testState.cycleNumber+" · scanning R_10");
+                }
                 updateStats();saveAndRenderTest();
-                log("New TEST cycle "+testState.cycleNumber+" started at virtual $10.00.");
-                if(auto)setState("TEST RUNNING · cycle "+testState.cycleNumber+" · scanning R_10");
+                log("New TEST cycle "+testState.cycleNumber+" ready at virtual $10.00.");
               }
             }else if(testState.totalProfit<=-5){
               testState.status="stopped";testModeActive=false;stopAutomation("TEST STOPPED · cumulative loss limit -$5.00 reached");
@@ -467,10 +474,10 @@ $("stop").addEventListener("click",function(){stopAutomation("AUTO OFF");log("Au
 $("testStart").addEventListener("click",function(){
   if(!authorized){setState("TEST BLOCKED · connect a Deriv DEMO account first");return;}
   if(currency!=="USD"){setState("TEST BLOCKED · Deriv DEMO account currency must be USD");return;}
-  if(auto||pending||contractId!==null){setState("TEST BLOCKED · wait for AUTO/open contract to stop first");return;}
+  if(auto||pending||(contractId!==null&&!(testModeActive&&testState.openContractId!==null))){setState("TEST BLOCKED · wait for AUTO/open contract to stop first");return;}
   if(testState.status==="completed"||testState.status==="stopped"||testState.status==="new"){
     if(testState.status!=="new"&&!confirm("Start a NEW 200-trade test and replace the saved test record?"))return;
-    testState={version:1,status:"paused",tradeCount:0,wins:0,losses:0,totalProfit:0,cyclesWon:0,cyclesLost:0,cycleNumber:1,cycleBalance:VIRTUAL_START,cycleProfit:0,cyclePeakProfit:0,cycleProtectedProfit:0,cycleProfitLockActive:false,peakTotalProfit:0,maxDrawdown:0,worstDrawdownTrade:0,openContractId:null};
+    testState={version:1,status:"paused",tradeCount:0,wins:0,losses:0,totalProfit:0,cyclesWon:0,cyclesLost:0,cycleNumber:1,cycleBalance:VIRTUAL_START,cycleProfit:0,cyclePeakProfit:0,cycleProtectedProfit:0,cycleProfitLockActive:false,firstCycleCheck:true,peakTotalProfit:0,maxDrawdown:0,worstDrawdownTrade:0,openContractId:null};
     testModeActive=true;virtualBalance=VIRTUAL_START;profitToday=0;wins=0;losses=0;consecutiveLosses=0;pauseUntil=0;peakProfit=0;protectedProfit=0;profitLockActive=false;profitLockTriggered=false;virtualStopTriggered=false;currentStake=BASE_STAKE;step=0;updateStats();
     log("New TEST 200 started · DEMO only · $10 cycle · $0.35 fixed stake.");
   }else{
