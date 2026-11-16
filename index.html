@@ -215,6 +215,7 @@ function getTradeStake(engine){
  }
  const amount=Number($('stake').value);
  if(!Number.isFinite(amount)||amount<0.35)return {ok:false,reason:'Manual stake must be at least 0.35 '+currency+'.'};
+ if((engine==='auto'||engine==='tester')&&mode==='demo'&&sessionStartBalance!==null){const balance=Number(currentBalance),cap=Math.min(sessionStartBalance*0.05,balance*0.05,engine==='tester'?0.50:Infinity);if(!Number.isFinite(cap)||amount>cap)return {ok:false,reason:'Stake exceeds the automatic engine safety cap of '+(Number.isFinite(cap)?cap.toFixed(2):'0.00')+' '+currency+'.'};}
  return {ok:true,amount};
 }
 function chooseAutoDuration(){
@@ -418,6 +419,8 @@ function onMarketTick(price,epoch){
 }
 
 $('symbol').addEventListener('change',()=>{updateMarketSettings();if(ws&&ws.readyState===1)subscribeTicks();});
+$('stakeMode').addEventListener('change',()=>updateAutoUI());
+$('autoDuration').addEventListener('change',()=>{if($('autoDuration').value==='auto')chooseAutoDuration();else $('timeframeInfo').textContent='Fixed timeframe: '+$('autoDuration').value+'.';});
 updateMarketSettings();
 window.addEventListener('beforeunload',()=>{if(ws)ws.close();});
 </script>
