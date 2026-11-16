@@ -159,8 +159,8 @@ async function connect(){
     const payoutMultiple=payout/ask,breakEven=(ask/payout)*100;
     if(trade.engine==='tester'){testerLastQuote='Stake '+ask.toFixed(2)+' → payout '+payout.toFixed(2);updateTesterUI('Quote received · potential profit '+(payout-ask).toFixed(2)+' '+currency+' · break-even '+breakEven.toFixed(1)+'%.');}
     log((trade.engine==='tester'?'TESTER ':'')+'Quote checked · payout '+payout.toFixed(2)+' / stake '+ask.toFixed(2)+' · break-even win rate '+breakEven.toFixed(1)+'%.');
-    socket.send(JSON.stringify({buy:data.proposal.id,price:ask}));
-    tradeRequestTimer=setTimeout(()=>{if(pendingProposal===trade){pendingProposal=null;tradeInProgress=false;autoCooldown=2;const note='DEMO order timed out waiting for Deriv buy confirmation. Automation remains on and will wait for the next valid setup.';log(note);$('tradeStatus').textContent=note;updateAutoUI();}},15000);
+    try{socket.send(JSON.stringify({buy:data.proposal.id,price:ask}));}catch(e){pendingProposal=null;tradeInProgress=false;autoCooldown=2;const note='Could not send Deriv buy request: '+(e.message||'socket send failed');log(note);$('tradeStatus').textContent=note;updateAutoUI();return;}
+    tradeRequestTimer=setTimeout(()=>{if(pendingProposal===trade){pendingProposal=null;tradeRequestTimer=null;if(trade.stage==='buy'){stopAuto('SAFETY STOP · Deriv did not confirm the buy response. An order may still be open. Reconnect and check the Deriv portfolio before restarting.');tradeInProgress=true;}else{tradeInProgress=false;autoCooldown=2;const note='DEMO buy request timed out before confirmation. Auto scalper will wait for the next valid setup.';log(note);$('tradeStatus').textContent=note;updateAutoUI();}}},15000);
    }
    if(data.msg_type==='buy'&&data.buy){
     if(tradeRequestTimer!==null){clearTimeout(tradeRequestTimer);tradeRequestTimer=null;}
