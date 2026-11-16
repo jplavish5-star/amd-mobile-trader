@@ -49,7 +49,7 @@
 <div class="card"><div id="log">Activity log\nWaiting for connection…</div></div>
 <script>
 let ws=null, wsPingTimer=null, mode='demo', authorized=false, currency='USD', tickSubId=null, contractSubs=new Set(), pendingProposal=null, marketDataReady=false, marketClosed=false,backtestPending=false,lastBacktestReport='',backtestBatch=[],backtestBatchCount=0,backtestSymbol='',backtestTimeout=null,fiveMinuteCandles=[],fiveMinuteBucket=null,testerHistoryReady=false,lastTesterSignalEpoch=null;
-let autoRunning=false,testerRunning=false,activeTradeEngine='manual',tickHistory=[],lastFastSignal=null,fastTickCooldown=0,testerContractId=null,testerPL=0,testerWins=0,testerLosses=0,testerBreakeven=0,testerConsecutiveLosses=0,testerLastQuote='--',tradeInProgress=false,activeContractId=null,activeTradeMarket='Forex',marketStats={Gold:{wins:0,losses:0},Forex:{wins:0,losses:0}},priceHistory=[],activeMinute=null,activeMinuteClose=null,autoCooldown=0,sessionStartBalance=null,currentBalance=null,accountBalance=null,sessionPL=0,wins=0,losses=0,consecutiveLosses=0,settledContractIds=new Set(),alertsEnabled=false,sessionStartedAt=null,lastTradeSummary='No completed trades yet';
+let tradeRequestTimer=null,autoRunning=false,testerRunning=false,activeTradeEngine='manual',tickHistory=[],lastFastSignal=null,fastTickCooldown=0,testerContractId=null,testerPL=0,testerWins=0,testerLosses=0,testerBreakeven=0,testerConsecutiveLosses=0,testerLastQuote='--',tradeInProgress=false,activeContractId=null,activeTradeMarket='Forex',marketStats={Gold:{wins:0,losses:0},Forex:{wins:0,losses:0}},priceHistory=[],activeMinute=null,activeMinuteClose=null,autoCooldown=0,sessionStartBalance=null,currentBalance=null,accountBalance=null,sessionPL=0,wins=0,losses=0,consecutiveLosses=0,settledContractIds=new Set(),alertsEnabled=false,sessionStartedAt=null,lastTradeSummary='No completed trades yet';
 const $=id=>document.getElementById(id);
 function log(message){const el=$('log');el.textContent+='\n'+new Date().toLocaleTimeString()+'  '+message;el.scrollTop=el.scrollHeight}
 function toggleAlerts(){alertsEnabled=!alertsEnabled;$('alertToggle').textContent=alertsEnabled?'SOUND ALERTS ON':'ENABLE SOUND ALERTS';$('alertStatus').textContent=alertsEnabled?'A short sound will play when a trade settles. Keep this page open.':'Sound alerts are off.';if(alertsEnabled)playAlert();}
@@ -69,7 +69,7 @@ function setMode(next){
 }
 function disconnect(showLog=true){
  if(wsPingTimer!==null){clearInterval(wsPingTimer);wsPingTimer=null;}
- autoRunning=false;testerRunning=false;if(tradeInProgress||activeContractId!==null){$('dashboardStatus').textContent='Connection interrupted during a trade. Reconnect and let the bot reconcile open positions before trusting session totals.';}updateAutoUI();
+ autoRunning=false;testerRunning=false;if(tradeRequestTimer!==null){clearTimeout(tradeRequestTimer);tradeRequestTimer=null;}pendingProposal=null;if(tradeInProgress||activeContractId!==null){$('dashboardStatus').textContent='Connection interrupted during a trade. Reconnect and let the bot reconcile open positions before trusting session totals.';}updateAutoUI();
  if(ws){const old=ws;ws=null;old.onclose=null;try{old.close();}catch(e){}}
  authorized=false;tickSubId=null;contractSubs.clear();marketDataReady=false;marketClosed=false;setTradeEnabled(false);
  $('virtualStart').disabled=false;
@@ -130,7 +130,7 @@ async function connect(){
   socket.onmessage=event=>{
    if(ws!==socket)return;
    let data;try{data=JSON.parse(event.data)}catch(e){log('Received unreadable server response.');return;}
-   if(data.error){if(pendingProposal){const failedEngine=pendingProposal.engine;pendingProposal=null;tradeInProgress=false;autoCooldown=2;if(failedEngine==='tester')updateTesterUI('Deriv rejected the quote/order: '+(data.error.message||'Unknown error'));}if(data.echo_req?.req_id===32||data.req_id===32){finishBacktest('Historical data request failed: '+(data.error.message||'Unknown error')+'. Retry when Deriv market data is available.');}const msg=data.error.message||'Unknown API error';log('Deriv API error: '+msg);$('tradeStatus').textContent=msg;if(/market.*closed|closed.*market|market is presently closed/i.test(msg)){marketClosed=true;marketDataReady=false;stopAuto('AUTO BLOCKED · This market is closed. Select an open market and press GET LIVE PRICE.');stopTester('TEST BLOCKED · This market is closed. Choose an open market before restarting.');status('⚠️ Selected market is closed','#65420e');setTradeEnabled(false);}if(data.msg_type==='proposal'||data.msg_type==='buy'){pendingProposal=null;tradeInProgress=false;autoCooldown=2;if(activeTradeEngine==='tester')updateTesterUI('Deriv rejected the contract order: '+msg);}return;}
+   if(data.error){const msg=data.error.message||'Unknown API error';const failedRequest=data.echo_req&&(data.echo_req.proposal===1||data.echo_req.buy!==undefined);if(pendingProposal&&failedRequest){const failedEngine=pendingProposal.engine;if(tradeRequestTimer!==null){clearTimeout(tradeRequestTimer);tradeRequestTimer=null;}pendingProposal=null;tradeInProgress=false;autoCooldown=2;const note='Deriv rejected '+(failedEngine==='tester'?'tester':'auto')+' order: '+msg;if(failedEngine==='tester')updateTesterUI(note);else $('tradeStatus').textContent=note;log(note);updateAutoUI();}if(data.echo_req?.req_id===32||data.req_id===32){finishBacktest('Historical data request failed: '+msg+'. Retry when Deriv market data is available.');}log('Deriv API error: '+msg);if(!failedRequest)$('tradeStatus').textContent=msg;if(/market.*closed|closed.*market|market is presently closed/i.test(msg)){marketClosed=true;marketDataReady=false;stopAuto('AUTO BLOCKED · This market is closed. Select an open market and press GET LIVE PRICE.');stopTester('TEST BLOCKED · This market is closed. Choose an open market before restarting.');status('⚠️ Selected market is closed','#65420e');setTradeEnabled(false);}return;}
    if(data.msg_type==='balance'&&data.balance){
     currency=data.balance.currency||currency;
     accountBalance=Number(data.balance.balance);$('balance').textContent='Deriv '+mode.toUpperCase()+' balance: '+accountBalance.toFixed(2)+' '+currency+' · '+(account.loginid||account.id);$('currentBalance').textContent=currentBalance.toFixed(2)+' '+currency;$('initialBalance').textContent=sessionStartBalance.toFixed(2)+' '+currency;updateAutoUI();
@@ -148,10 +148,11 @@ async function connect(){
    }
    if(data.msg_type==='tick'&&data.tick){if(data.tick.symbol!==$('symbol').value)return;if(data.subscription&&data.subscription.id)tickSubId=data.subscription.id;const quote=Number(data.tick.quote);marketDataReady=true;marketClosed=false;setTradeEnabled(authorized);$('price').innerHTML=quote.toLocaleString(undefined,{maximumFractionDigits:8})+'<small>'+data.tick.symbol+' · LIVE</small>';if(!$('tradeStatus').textContent.includes('Trade opened'))$('tradeStatus').textContent='Live market data received. Trading controls are available.';onMarketTick(quote,Number(data.tick.epoch)||Date.now()/1000);}
    if(data.msg_type==='proposal'&&data.proposal&&pendingProposal){
-    const trade=pendingProposal;pendingProposal=null;
+    const trade=pendingProposal;trade.stage='buy';
+    if(tradeRequestTimer!==null){clearTimeout(tradeRequestTimer);tradeRequestTimer=null;}
     const ask=Number(data.proposal.ask_price),payout=Number(data.proposal.payout);
     if(!Number.isFinite(ask)||!Number.isFinite(payout)||ask<=0||payout<=ask){
-     tradeInProgress=false;autoCooldown=2;
+     pendingProposal=null;tradeInProgress=false;autoCooldown=2;
      const note='Quote rejected: payout does not exceed the stake, or quote values are invalid.';
      if(trade.engine==='tester')updateTesterUI(note);else $('tradeStatus').textContent=note;log(note);updateAutoUI();return;
     }
@@ -159,9 +160,12 @@ async function connect(){
     if(trade.engine==='tester'){testerLastQuote='Stake '+ask.toFixed(2)+' → payout '+payout.toFixed(2);updateTesterUI('Quote received · potential profit '+(payout-ask).toFixed(2)+' '+currency+' · break-even '+breakEven.toFixed(1)+'%.');}
     log((trade.engine==='tester'?'TESTER ':'')+'Quote checked · payout '+payout.toFixed(2)+' / stake '+ask.toFixed(2)+' · break-even win rate '+breakEven.toFixed(1)+'%.');
     socket.send(JSON.stringify({buy:data.proposal.id,price:ask}));
+    tradeRequestTimer=setTimeout(()=>{if(pendingProposal===trade){pendingProposal=null;tradeInProgress=false;autoCooldown=2;const note='DEMO order timed out waiting for Deriv buy confirmation. Automation remains on and will wait for the next valid setup.';log(note);$('tradeStatus').textContent=note;updateAutoUI();}},15000);
    }
    if(data.msg_type==='buy'&&data.buy){
-    activeContractId=data.buy.contract_id;if(activeTradeEngine==='tester')testerContractId=data.buy.contract_id;
+    if(tradeRequestTimer!==null){clearTimeout(tradeRequestTimer);tradeRequestTimer=null;}
+    if(pendingProposal){activeTradeEngine=pendingProposal.engine;pendingProposal=null;}
+    tradeInProgress=true;activeContractId=data.buy.contract_id;if(activeTradeEngine==='tester')testerContractId=data.buy.contract_id;
     log((activeTradeEngine==='tester'?'TESTER ':'')+'Trade purchased. Contract ID: '+data.buy.contract_id+' · Buy price: '+data.buy.buy_price);
     if(activeTradeEngine==='tester')updateTesterUI('DEMO contract opened · waiting for Deriv settlement…');else $('tradeStatus').textContent='Trade opened. Waiting for contract result…';
     socket.send(JSON.stringify({proposal_open_contract:1,contract_id:data.buy.contract_id,subscribe:1}));
@@ -210,9 +214,9 @@ function requestTrade(direction,engine='manual'){
  if(!Number.isInteger(duration)||duration<5||unit!=='m'){alert('This strategy requires a supported minute-based contract (5 minutes or longer).');return;}
  if(pendingProposal||tradeInProgress){alert('A trade is already being processed. Please wait.');return;}
  const contractType=direction==='RISE'?'CALL':'PUT';
- if(engine==='tester'&&(mode!=='demo'||!isGold()||sessionStartBalance===null||stake>Math.min(0.50,sessionStartBalance*0.05))){alert('Gold tester is DEMO-only. Select Gold/USD and use a stake no higher than $0.50 (and no higher than 5% of your virtual balance).');return;}const trade={direction,stake,engine};pendingProposal=trade;tradeInProgress=true;activeTradeEngine=engine;activeTradeMarket=isGold()?'Gold':'Forex';
+ if(engine==='tester'&&(mode!=='demo'||!isGold()||sessionStartBalance===null||stake>Math.min(0.50,sessionStartBalance*0.05))){alert('Gold tester is DEMO-only. Select Gold/USD and use a stake no higher than $0.50 (and no higher than 5% of your virtual balance).');return;}const trade={direction,stake,engine,stage:'proposal'};pendingProposal=trade;tradeInProgress=true;activeTradeEngine=engine;activeTradeMarket=isGold()?'Gold':'Forex';
  if(engine==='tester')$('testerState').textContent='Requesting live Deriv quote…';else $('tradeStatus').textContent='Requesting a price quote…';log((engine==='tester'?'TESTER ':'')+'Requesting '+direction+' proposal: '+stake+' '+currency+', '+duration+' '+(unit==='m'?'minutes':'ticks')+'.');
- ws.send(JSON.stringify({proposal:1,amount:stake,basis:'stake',contract_type:contractType,currency,duration,duration_unit:unit,subscribe:1,underlying_symbol:$('symbol').value}));
+ try{ws.send(JSON.stringify({proposal:1,amount:stake,basis:'stake',contract_type:contractType,currency,duration,duration_unit:unit,subscribe:1,underlying_symbol:$('symbol').value}));tradeRequestTimer=setTimeout(()=>{if(pendingProposal===trade){pendingProposal=null;tradeInProgress=false;autoCooldown=2;const note='Timed out waiting for Deriv price quote. Auto scalper is still running and will wait for the next valid signal.';log(note);$('tradeStatus').textContent=note;updateAutoUI();}},15000);}catch(e){pendingProposal=null;tradeInProgress=false;autoCooldown=2;log('Could not send Deriv proposal: '+(e.message||'socket send failed'));updateAutoUI();}
 }
 
 function updateTesterUI(message){$('testerPL').textContent=(testerPL>=0?'+':'')+testerPL.toFixed(2)+' '+currency;$('testerWinRate').textContent=(testerWins+testerLosses+testerBreakeven?Math.round(testerWins/(testerWins+testerLosses+testerBreakeven)*100):0)+'%';$('testerWins').textContent=String(testerWins);$('testerLosses').textContent=String(testerLosses);$('testerTrades').textContent=String(testerWins+testerLosses+testerBreakeven);$('testerBalance').textContent=(sessionStartBalance===null?'--':(sessionStartBalance+testerPL).toFixed(2)+' '+currency);$('testerQuote').textContent=testerLastQuote;$('testerState').textContent=message||(testerRunning?'TEST ON · Waiting for next completed candle signal.':'OFF · No new test contracts will be opened.');$('testerStart').disabled=!authorized||autoRunning||testerRunning||!marketDataReady||mode!=='demo';$('testerStop').disabled=!testerRunning;}
