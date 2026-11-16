@@ -67,6 +67,7 @@ button:disabled{opacity:.4}.row{display:grid;grid-template-columns:1fr 1fr;gap:1
 <button class="connect" id="start" disabled>START AUTO</button>
 <button class="stop" id="stop" disabled>STOP AUTO</button>
 </div>
+<p id="payoutStatus">Payout filter: waiting for a live Deriv quote · minimum profit $0.29 · break-even ≤55%</p>
 <p id="state">AUTO OFF</p>
 </div>
 
@@ -211,7 +212,26 @@ async function connect(){
         evaluateTicks();
       }
       if(data.msg_type==="proposal"&&data.proposal&&pending){
-        send({buy:data.proposal.id,price:currentStake});
+        const quotedPayout=Number(data.proposal.payout);
+        const quotedAsk=Number(data.proposal.ask_price);
+        const quotedProfit=quotedPayout-quotedAsk;
+        const breakEven=quotedPayout>0?(quotedAsk/quotedPayout)*100:Infinity;
+        if(!Number.isFinite(quotedPayout)||!Number.isFinite(quotedAsk)||quotedPayout<=0||quotedAsk<=0){
+          pending=false;
+          $("payoutStatus").textContent="Payout filter: quote missing/invalid · trade skipped";
+          log("SKIPPED - Deriv proposal did not provide a valid payout and ask price.");
+          setState("TRADE SKIPPED · invalid payout quote");
+        }else{
+          $("payoutStatus").textContent="Live quote · payout $"+quotedPayout.toFixed(2)+" · profit $"+quotedProfit.toFixed(2)+" · break-even "+breakEven.toFixed(1)+"%";
+          if(quotedProfit<0.2864||breakEven>55){
+            pending=false;
+            log("SKIPPED - Payout $"+quotedPayout.toFixed(2)+", profit $"+quotedProfit.toFixed(2)+", BE "+breakEven.toFixed(1)+"% · filter requires profit ≥$0.2864 and BE ≤55%.");
+            setState("TRADE SKIPPED · payout filter");
+          }else{
+            log("PAYOUT APPROVED · payout $"+quotedPayout.toFixed(2)+" · profit $"+quotedProfit.toFixed(2)+" · break-even "+breakEven.toFixed(1)+"%.");
+            send({buy:data.proposal.id,price:currentStake});
+          }
+        }
       }
       if(data.msg_type==="buy"&&data.buy){
         pending=false;
@@ -313,7 +333,7 @@ $("start").addEventListener("click",function(){
   }
   auto=true;$("start").disabled=true;$("stop").disabled=false;
   setState("AUTO ON · watching Volatility 10 ticks");
-  log("AUTO started · R_10 · 5 ticks · fixed $0.35 stake · no martingale · stop loss -$0.70 · profit lock activates at +$0.50 and trails 50% of peak profit · starting capital $"+balance.toFixed(2)+" USD.");
+  log("AUTO started · R_10 · 5 ticks · fixed $0.35 stake · no martingale · live payout filter: profit ≥$0.2864 and break-even ≤55% · stop loss -$0.70 · profit lock activates at +$0.50 and trails 50% of peak profit · starting capital $"+balance.toFixed(2)+" USD.");
   evaluateTicks();
 });
 $("stop").addEventListener("click",function(){stopAutomation("AUTO OFF");log("Automation stopped. Any open contract will still be monitored.");});
