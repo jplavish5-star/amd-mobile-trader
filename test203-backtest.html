@@ -68,11 +68,11 @@ button{padding:14px;border:0;border-radius:11px;font-weight:750;font-size:15px;c
 "use strict";
 const $=id=>document.getElementById(id);
 const SYMBOL="R_10",BATCH=5000,MAX_BATCHES=10,TARGET=1000,EXPIRY=5,STAKE=0.35,WIN=0.2625,LOSS=-0.35;
-let socket=null,busy=false,timer=null,retryTimer=null,prices=[],times=[],batchCount=0,requestEnd="latest",lastOldest=null,appId="",hostIndex=0,attemptNo=0,activeSocketUrl="";
-const WS_HOSTS=["ws.derivws.com","ws.binaryws.com"],MAX_CONNECT_ATTEMPTS=3;
+let socket=null,busy=false,timer=null,retryTimer=null,pingTimer=null,pongTimer=null,prices=[],times=[],batchCount=0,requestEnd="latest",lastOldest=null,appId="",attemptNo=0,activeSocketUrl="",historyStarted=false;
+const WS_HOST="ws.derivws.com",MAX_CONNECT_ATTEMPTS=3,PING_INTERVAL=20000;
 function log(s){$("log").textContent+="\n"+new Date().toLocaleTimeString()+"  "+s;$("log").scrollTop=$("log").scrollHeight;}
 function money(n){return (n>=0?"+$":"-$")+Math.abs(n).toFixed(2);}
-function finish(){if(timer){clearTimeout(timer);timer=null;}if(retryTimer){clearTimeout(retryTimer);retryTimer=null;}const s=socket;socket=null;busy=false;if(s){try{s.close();}catch(e){}}$("run").disabled=false;}
+function finish(){if(timer){clearTimeout(timer);timer=null;}if(retryTimer){clearTimeout(retryTimer);retryTimer=null;}if(pingTimer){clearInterval(pingTimer);pingTimer=null;}if(pongTimer){clearTimeout(pongTimer);pongTimer=null;}const s=socket;socket=null;busy=false;if(s){try{s.close();}catch(e){}}$("run").disabled=false;}
 function clearResults(){["signals","trades","wins","losses","ties","winrate","profit","drawdown","streak","tickCount","batches"].forEach(id=>$(id).textContent="--");$("verdict").textContent="NOT RUN";$("range").textContent="Historical time range: --";$("note").textContent="A pass requires 1,000 simulated trades, at least 58% win rate, and positive estimated P/L. Passing is not a guarantee of future profitability.";}
 function analyzeAt(p,i){
  const recent=[];for(let j=i-7;j<=i;j++)recent.push(p[j]-p[j-1]);
@@ -116,6 +116,80 @@ function replay(){
  else if(profit<=0)$("note").textContent="Win rate met the threshold, but estimated P/L is not positive. TEST 203 is NOT cleared for live DEMO testing.";
  else $("note").textContent="Thresholds met under the stated payout assumptions. This only supports a cautious further DEMO test; it does not prove an edge or justify real-money trading.";
  log("Replay finished · "+trades+" trades · "+wins+" wins / "+losses+" losses / "+ties+" ties · "+rate.toFixed(1)+"% win rate · estimated P/L "+money(profit)+" · max drawdown -$"+maxDD.toFixed(2)+" · longest losing streak "+longest+".");
+}
+function requestBatch(end){
+ requestEnd=end;
+ if(!socket||socket.readyState!==1){log("History request queued while socket reconnects · "+activeSocketUrl);return;}
+ try{socket.send(JSON.stringify({ticks_history:SYMBOL,count:BATCH,end:end,style:"ticks"}));}
+ catch(e){log("Send failed · "+e.name+": "+e.message);}
+}
+function retryConnection(closeInfo){
+ if(!busy)return;
+ if(attemptNo<MAX_CONNECT_ATTEMPTS){
+  const wait=1000*attemptNo;
+  log("Retrying official Deriv endpoint in "+wait+" ms · attempt "+(attemptNo+1)+"/"+MAX_CONNECT_ATTEMPTS+".");
+  retryTimer=setTimeout(function(){retryTimer=null;connectSocket();},wait);
+  return;
+ }
+ $("status").textContent="Official Deriv WebSocket did not complete the public-data handshake. See diagnostic log.";
+ log("All "+MAX_CONNECT_ATTEMPTS+" attempts to "+WS_HOST+" failed. Last close code="+closeInfo.code+" · reason="+(closeInfo.reason||"(empty)")+". No fallback host used, no PAT requested, no trades placed.");
+ finish();
+}
+function connectSocket(){
+ if(!busy)return;
+ attemptNo++;
+ const url="wss://"+WS_HOST+"/websockets/v3?app_id="+encodeURIComponent(appId);
+ activeSocketUrl=url;
+ log("Connecting · "+url+" · attempt "+attemptNo+"/"+MAX_CONNECT_ATTEMPTS+" · browser online="+(navigator.onLine?"yes":"no"));
+ try{
+  const s=new WebSocket(url);socket=s;const started=Date.now();
+  s.onopen=function(){
+   if(socket!==s||!busy)return;
+   log("WebSocket OPEN · official host="+WS_HOST+" · readyState="+s.readyState+". Sending public ping before history request.");
+   try{s.send(JSON.stringify({ping:1,req_id:9001}));}
+   catch(e){log("Ping send failed · "+e.name+": "+e.message);try{s.close();}catch(_){}}
+   if(pongTimer)clearTimeout(pongTimer);
+   pongTimer=setTimeout(function(){if(socket===s&&busy&&!historyStarted){log("PING TIMEOUT · no pong received within 8 seconds.");try{s.close(4000,"ping timeout");}catch(_){}}},8000);
+  };
+  s.onmessage=function(ev){
+   if(socket!==s||!busy)return;let d;try{d=JSON.parse(ev.data);}catch(e){log("Ignored invalid JSON response.");return;}
+   if(d.error){$("status").textContent="Deriv API error: "+d.error.message;log("API error "+(d.error.code||"")+": "+d.error.message);finish();return;}
+   const isPong=d.msg_type==="ping"||(d.echo_req&&d.echo_req.ping===1);
+   if(isPong){
+    if(pongTimer){clearTimeout(pongTimer);pongTimer=null;}
+    log("PING RESPONSE received · official endpoint is responding.");
+    if(!historyStarted){
+     historyStarted=true;
+     pingTimer=setInterval(function(){if(socket===s&&busy&&s.readyState===1){try{s.send(JSON.stringify({ping:1,req_id:9002}));}catch(e){log("Keepalive ping send failed · "+e.message);}}},PING_INTERVAL);
+     $("status").textContent="Connection verified. Requesting historical R_10 ticks…";
+     requestBatch(requestEnd);
+    }
+    return;
+   }
+   if(d.msg_type!=="history"||!d.history)return;
+   const pp=(d.history.prices||[]).map(Number),tt=(d.history.times||[]).map(Number);
+   if(!pp.length||pp.length!==tt.length||pp.some(x=>!Number.isFinite(x))){$("status").textContent="Invalid or empty history batch.";log("Invalid batch received; stopping.");finish();return;}
+   const newCount=pp.length;
+   if(batchCount===0){prices=pp.slice();times=tt.slice();}else{prices=pp.concat(prices);times=tt.concat(times);}
+   batchCount++;log("History batch "+batchCount+"/"+MAX_BATCHES+" · "+newCount+" older ticks added · "+prices.length+" total.");
+   const oldest=tt[0];
+   if(batchCount<MAX_BATCHES&&pp.length===BATCH&&Number.isFinite(oldest)&&oldest>0&&oldest!==lastOldest&&prices.length<100000){
+    lastOldest=oldest;$("status").textContent="Downloaded "+prices.length+" ticks. Fetching older history (batch "+(batchCount+1)+"/"+MAX_BATCHES+")…";requestBatch(oldest-1);
+   }else{
+    $("status").textContent="Downloaded "+prices.length+" ticks. Running TEST 203 replay locally…";
+    log("Historical download complete. Running TEST 203 replay locally.");
+    replay();$("status").textContent="Backtest finished. No live or demo contracts were placed.";finish();
+   }
+  };
+  s.onerror=function(ev){if(socket!==s||!busy)return;$("status").textContent="Official Deriv WebSocket error · checking close details…";log("WebSocket ERROR event · endpoint="+WS_HOST+" · readyState="+s.readyState+" · browser online="+(navigator.onLine?"yes":"no")+" · eventType="+(ev&&ev.type||"error")+". Browser does not expose the underlying network/server cause.");};
+  s.onclose=function(e){
+   if(socket!==s||!busy)return;socket=null;
+   if(pongTimer){clearTimeout(pongTimer);pongTimer=null;}if(pingTimer){clearInterval(pingTimer);pingTimer=null;}
+   const info={code:e.code,reason:e.reason||""};
+   log("Socket CLOSED · endpoint="+WS_HOST+" · code="+e.code+" · reason="+(e.reason||"(empty)")+" · clean="+e.wasClean+" · open duration="+((Date.now()-started)/1000).toFixed(1)+"s · ping received="+(historyStarted?"yes":"no")+" · batch="+batchCount+" · ticks="+prices.length+".");
+   retryConnection(info);
+  };
+ }catch(e){log("WebSocket constructor failed · endpoint="+WS_HOST+" · "+e.name+": "+e.message);retryConnection({code:"constructor",reason:e.message});}
 }
 function requestBatch(end){
  requestEnd=end;
@@ -195,10 +269,10 @@ $("run").addEventListener("click",function(){
  if(busy)return;
  appId=$("appid").value.trim();
  if(!/^\d+$/.test(appId)){alert("Enter the numeric Deriv App ID only. Do not enter your PAT.");return;}
- clearResults();prices=[];times=[];batchCount=0;lastOldest=null;requestEnd="latest";hostIndex=0;attemptNo=0;busy=true;socket=null;
+ clearResults();prices=[];times=[];batchCount=0;lastOldest=null;requestEnd="latest";attemptNo=0;historyStarted=false;busy=true;socket=null;
  $("run").disabled=true;$("status").textContent="Connecting to public historical market data…";
- log("Starting history download: up to "+(BATCH*MAX_BATCHES).toLocaleString()+" R_10 ticks. No PAT, no account authorization, no trade requests.");
- timer=setTimeout(function(){if(busy){$("status").textContent="History download timed out. See diagnostic log.";log("120-second overall timeout · host="+WS_HOSTS[hostIndex]+" · attempts="+attemptNo+" · batches="+batchCount+" · ticks="+prices.length);finish();}},120000);
+ log("Starting public history download: up to "+(BATCH*MAX_BATCHES).toLocaleString()+" R_10 ticks. No PAT, no authorize request, no account access, no trades. First step is a ping handshake.");
+ timer=setTimeout(function(){if(busy){$("status").textContent="History download timed out. See diagnostic log.";log("120-second overall timeout · endpoint="+WS_HOST+" · attempts="+attemptNo+" · batches="+batchCount+" · ticks="+prices.length);finish();}},120000);
  connectSocket();
 });
 $("clear").addEventListener("click",function(){if(busy){alert("Wait for the current download to finish.");return;}clearResults();$("status").textContent="Results cleared. TEST 201B and TEST 203 live data are untouched."; $("log").textContent="Backtest results cleared. No saved live-test data was changed.";});
