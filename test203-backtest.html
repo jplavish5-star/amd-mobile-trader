@@ -25,7 +25,7 @@ button{padding:14px;border:0;border-radius:11px;font-weight:750;font-size:14px;c
 <span class="pill">DERIV R_10 · HISTORICAL DATA · NO LIVE TRADES</span>
 <h1>TEST 203 · Offline Historical Backtest</h1>
 <p>Import genuine R_10 tick history as CSV or JSON, or fetch public history directly. All replay calculations run locally in this page.</p>
-<div class="notice">BACKTEST ONLY — NO PAT · NO LOGIN · NO CONTRACT PURCHASES · NO REAL OR DEMO TRADES</div>
+<div class="notice">BACKTEST ONLY — DEMO AUTHENTICATION · HISTORY DOWNLOAD ONLY · NO CONTRACT PURCHASES OR TRADES</div>
 <p class="small">Assumed contract economics: $0.35 stake, $0.6125 total payout on a win (+$0.2625 net), -$0.35 on a loss, $0 on a tie. Tick history does not contain past proposal payouts, so P/L is an estimate and does not prove executable profitability.</p>
 </div>
 <div class="card">
@@ -37,8 +37,10 @@ button{padding:14px;border:0;border-radius:11px;font-weight:750;font-size:14px;c
 </div>
 <div class="card">
 <h2>Fetch public Deriv R_10 history</h2>
-<p>Uses public ticks_history only and the same Deriv App ID you enter in your working bot. No PAT, no authorize call and no account connection. Downloads up to 50,000 ticks in 5,000-tick batches.</p>
-<label for="appid">Your Deriv App ID (paste exactly as used by your working bot)</label>
+<p>Uses the same authenticated DEMO connection sequence as TEST 201B: PAT + App ID → Deriv account lookup → secure OTP WebSocket. Once connected, it requests R_10 ticks_history only. It never buys or sells contracts.</p>
+<label for="token">Deriv DEMO Personal Access Token (PAT)</label>
+<input id="token" type="password" autocomplete="off" placeholder="Paste your DEMO PAT for this session only">
+<label for="appid">Deriv App ID (same one used in TEST 201B)</label>
 <input id="appid" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste your existing Deriv App ID">
 <div class="grid">
 <div><label>Market</label><div class="stat">R_10</div></div>
@@ -75,7 +77,7 @@ button{padding:14px;border:0;border-radius:11px;font-weight:750;font-size:14px;c
 <p>8 most recent price moves; at least 6 of 8 must agree in direction; directional efficiency at least 65%; recent volatility must be 0.60×–1.80× the preceding 20-move baseline; contract settles after 5 ticks. Simulated trades do not overlap: the next signal is checked after settlement.</p>
 <p class="small">A research pass requires at least 1,000 trades, at least 58% wins excluding ties, and positive estimated P/L. A pass is not permission for real-money trading. Results are not cleared for live DEMO automatically.</p>
 </div>
-<div class="card"><h2>Activity log</h2><div id="log">TEST 203 offline backtester ready. No PAT or account login is used.</div></div>
+<div class="card"><h2>Activity log</h2><div id="log">TEST 203 historical backtester ready. Enter the same DEMO PAT and App ID used in TEST 201B. Credentials are not saved by this page.</div></div>
 <script>
 (function(){
 "use strict";
@@ -95,6 +97,7 @@ function stopFetch(){
 if(timeoutId){clearTimeout(timeoutId);timeoutId=null;}
 const s=ws;ws=null;busy=false;if(s){s.onopen=s.onmessage=s.onerror=s.onclose=null;try{s.close();}catch(e){}}
 $("fetch").disabled=false;$("upload").disabled=false;
+$("token").value="";
 }
 function failFetch(message){
 log(message);status("Fetch stopped. Your file-upload fallback is ready.");stopFetch();
@@ -190,17 +193,45 @@ ws.send(JSON.stringify({ticks_history:CFG.symbol,count:CFG.batch,end:end,style:"
 if(timeoutId)clearTimeout(timeoutId);
 timeoutId=setTimeout(()=>failFetch("30-second timeout waiting for the next Deriv history response. Batch "+batchCount+"; "+downloadPrices.length+" ticks received."),CFG.timeout);
 }
-$("fetch").addEventListener("click",()=>{
-if(busy)return;const appId=$("appid").value.trim();
-if(!/^[A-Za-z0-9_-]{1,64}$/.test(appId)){status("Paste the same App ID used by your working bot. Letters and numbers are accepted.");log("Fetch not started: App ID is missing or contains unsupported characters.");return;}
+$("fetch").addEventListener("click",async()=>{
+if(busy)return;
+const token=$("token").value.trim(),appId=$("appid").value.trim();
+if(!token||!appId){status("Enter the same DEMO PAT and App ID used in TEST 201B.");log("Fetch not started: DEMO PAT or App ID is missing.");return;}
 resetStats();downloadPrices=[];downloadTimes=[];batchCount=0;nextEnd="latest";busy=true;
-$("fetch").disabled=true;$("upload").disabled=true;$("appidUsed").textContent=appId;status("Connecting to Deriv public history with your App ID…");setProgress(0,"Connecting · 0 / 50,000 ticks.");
-const url="wss://ws.derivws.com/websockets/v3?app_id="+encodeURIComponent(appId);
-log("Opening official Deriv WebSocket with the App ID entered in this page · public ticks_history only · no PAT, no authorize, no trades.");
+$("fetch").disabled=true;$("upload").disabled=true;$("appidUsed").textContent=appId;
+status("Authenticating with Deriv DEMO using the TEST 201B method…");setProgress(0,"Authenticating · 0 / 50,000 ticks.");
+log("Using TEST 201B connection sequence: account lookup with Bearer PAT + Deriv-App-ID, request secure OTP URL, then open that OTP WebSocket. No trade requests will be sent.");
+timeoutId=setTimeout(()=>failFetch("30-second authentication/connection timeout. Check the PAT and App ID, then retry."),CFG.timeout);
 try{
-ws=new WebSocket(url);
-timeoutId=setTimeout(()=>failFetch("30-second connection timeout. Use CSV/JSON upload fallback."),CFG.timeout);
-ws.onopen=()=>{log("WebSocket connected. Requesting R_10 history.");try{fetchBatch(nextEnd);}catch(e){failFetch("Could not request history: "+e.message);}};
+const headers={"Authorization":"Bearer "+token,"Deriv-App-ID":appId,"Content-Type":"application/json"};
+const accountResponse=await fetch("https://api.derivws.com/trading/v1/options/accounts",{method:"GET",headers:headers});
+const accountBody=await accountResponse.json();
+if(!accountResponse.ok)throw new Error((accountBody.errors&&accountBody.errors[0]&&accountBody.errors[0].message)||accountBody.message||("Account request HTTP "+accountResponse.status));
+function findDemo(node){
+if(Array.isArray(node)){for(const item of node){const found=findDemo(item);if(found)return found;}}
+else if(node&&typeof node==="object"){
+const id=node.account_id||node.accountId||node.id;
+const type=String(node.account_type||node.accountType||node.type||"").toLowerCase();
+if(id&&(type.indexOf("demo")>=0||node.is_demo===true))return {id:String(id),loginid:node.loginid||node.login_id||id};
+for(const value of Object.values(node)){if(value&&typeof value==="object"){const found=findDemo(value);if(found)return found;}}
+}
+return null;
+}
+const account=findDemo(accountBody.data||accountBody);
+if(!account)throw new Error("No DEMO Options account found. Check that this PAT has the required account access.");
+log("DEMO account found. Requesting secure OTP connection URL…");
+const otpResponse=await fetch("https://api.derivws.com/trading/v1/options/accounts/"+encodeURIComponent(account.id)+"/otp",{method:"POST",headers:headers});
+const otpBody=await otpResponse.json();
+if(!otpResponse.ok||!otpBody.data||!otpBody.data.url)throw new Error((otpBody.errors&&otpBody.errors[0]&&otpBody.errors[0].message)||otpBody.message||("OTP request HTTP "+otpResponse.status));
+if(timeoutId){clearTimeout(timeoutId);timeoutId=null;}
+log("Secure OTP URL received. Opening the same authorized WebSocket method as TEST 201B…");
+ws=new WebSocket(otpBody.data.url);
+timeoutId=setTimeout(()=>failFetch("30-second timeout waiting for the secure Deriv WebSocket/history response. CSV/JSON upload remains available."),CFG.timeout);
+ws.onopen=()=>{
+if(!busy)return;
+log("Authenticated TEST 201B WebSocket connected. Requesting public R_10 history.");
+try{fetchBatch(nextEnd);}catch(e){failFetch("Could not request history: "+e.message);}
+};
 ws.onmessage=ev=>{
 if(!busy)return;let d;try{d=JSON.parse(ev.data);}catch(e){failFetch("Deriv returned invalid JSON.");return;}
 if(d.error){failFetch("Deriv API error "+(d.error.code||"")+": "+d.error.message);return;}
@@ -209,18 +240,18 @@ const ps=(d.history.prices||[]).map(Number),ts=(d.history.times||[]).map(Number)
 if(!ps.length||ps.length!==ts.length||ps.some(x=>!Number.isFinite(x))||ts.some(x=>!Number.isFinite(x))){failFetch("Invalid or empty history batch.");return;}
 downloadPrices=ps.concat(downloadPrices);downloadTimes=ts.concat(downloadTimes);batchCount++;
 setProgress(downloadPrices.length/CFG.maxTicks*100,"Received "+downloadPrices.length.toLocaleString()+" / 50,000 ticks · batch "+batchCount+"/10.");
-log("Batch "+batchCount+": "+ps.length+" ticks · total "+downloadPrices.length+".");
+log("History batch "+batchCount+": "+ps.length+" ticks · total "+downloadPrices.length+".");
 const oldest=ts[0];
 if(downloadPrices.length<CFG.maxTicks&&ps.length===CFG.batch&&oldest>0&&batchCount<10){nextEnd=oldest-1;try{fetchBatch(nextEnd);}catch(e){failFetch("Next history batch failed: "+e.message);}return;}
-stopFetch();try{loadRows(downloadPrices.map((p,i)=>({t:downloadTimes[i],p})),"Deriv public API");}catch(e){status("History validation failed: "+e.message);log(e.message);}
+stopFetch();try{loadRows(downloadPrices.map((p,i)=>({t:downloadTimes[i],p})),"authenticated Deriv DEMO connection");}catch(e){status("History validation failed: "+e.message);log(e.message);}
 };
-ws.onerror=()=>{if(busy)failFetch("WebSocket error from Deriv. Upload CSV/JSON instead; no indefinite waiting.");};
-ws.onclose=e=>{if(busy)failFetch("Deriv socket closed (code "+e.code+"). Upload CSV/JSON instead.");};
-}catch(e){failFetch("Could not open Deriv WebSocket: "+e.message);}
+ws.onerror=()=>{if(busy)failFetch("Secure Deriv WebSocket error. Check the TEST 201B PAT/App ID pair and retry.");};
+ws.onclose=e=>{if(busy)failFetch("Secure Deriv socket closed (code "+e.code+"). Check the TEST 201B connection credentials and retry.");};
+}catch(e){failFetch("TEST 201B authentication failed: "+e.message);}
 });
 $("clear").addEventListener("click",()=>{
 if(busy){status("Wait for the current fetch to stop before clearing.");return;}
-prices=[];times=[];downloadPrices=[];downloadTimes=[];resetStats();$("log").textContent="Results cleared. No other bot page, TEST 201B or live TEST 203 was changed.";status("Ready. Upload a file or fetch public R_10 history.");setProgress(0,"No download running.");
+prices=[];times=[];downloadPrices=[];downloadTimes=[];resetStats();$("log").textContent="Results cleared. TEST 201B and the live bot were not changed.";status("Ready. Upload a file or fetch public R_10 history.");setProgress(0,"No download running.");
 });
 })();
 </script>
