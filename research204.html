@@ -106,7 +106,7 @@ function armTimeout(){if(timer)clearTimeout(timer);timer=setTimeout(()=>retry('B
 function retry(reason){if(socket!==current||!busy)return;if(timer){clearTimeout(timer);timer=null}if(attempt<3){attempt++;log(reason+' Waiting 2 seconds; retry '+attempt+'/3 for the SAME batch.');timer=setTimeout(()=>{if(socket===current&&busy){armTimeout();try{fetchHistory(older,current)}catch(e){retry('Send failed: '+e.message)}}},2000);return}fail(reason+' Three retries exhausted. Saved ticks preserved; press RESUME FETCH later.')}
 function requestBatch(){attempt=0;armTimeout();try{fetchHistory(older,current)}catch(e){retry('Send failed: '+e.message)}}
 current.onopen=()=>{if(socket!==current)return;log('Authenticated. Fetching 1,000-tick batches with 300ms spacing.');requestBatch()};
-current.onmessage=ev=>{
+current.onmessage=async ev=>{
 if(socket!==current||!busy)return;let d;try{d=JSON.parse(ev.data)}catch(e){retry('Invalid JSON response.');return}
 if(d.error){retry('Deriv error: '+d.error.message);return}
 if(d.msg_type!=='history'||!d.history)return;
