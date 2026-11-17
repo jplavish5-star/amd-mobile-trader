@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><meta name="theme-color" content="#10141c"><title>RESEARCH 204 · R_10 Mean Reversion</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,Arial,sans-serif;background:#10141c;color:#f4f6fb}*{box-sizing:border-box}body{margin:0;padding:14px;max-width:850px;margin:auto}.card{background:#1b222d;border:1px solid #303b4b;border-radius:15px;padding:15px;margin:12px 0}h1{font-size:23px;margin:7px 0}h2{font-size:17px;margin:0 0 10px}p,.muted{color:#bac5d4;font-size:13px;line-height:1.5}label{display:block;font-size:13px;color:#cbd5e1;margin:10px 0 5px}input{width:100%;padding:13px;border-radius:10px;border:1px solid #455165;background:#10151d;color:white;font-size:15px}button{padding:13px;border:0;border-radius:10px;font-weight:750;font-size:14px;cursor:pointer}.primary{background:#1677ff;color:white}.secondary{background:#344154;color:white}.danger{background:#67313c;color:white}button:disabled{opacity:.4}.row,.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.stat{font-size:19px;font-weight:750;overflow-wrap:anywhere}.pill{display:inline-block;padding:5px 9px;border-radius:20px;background:#313e50;font-size:12px}.notice{background:#352817;border:1px solid #8a5a20;border-radius:11px;padding:12px;color:#ffdc9c;font-weight:700}.good{color:#37df9d}.bad{color:#ff7187}.small{font-size:11px}.meter{height:8px;background:#303b4b;border-radius:8px;overflow:hidden}.meter i{display:block;height:100%;width:0;background:#37df9d}.result{background:#121923;border:1px solid #354154;border-radius:11px;padding:12px;margin:9px 0}#log{height:130px;overflow:auto;background:#070a0f;color:#b9d6ff;border-radius:9px;padding:10px;font:11px/1.5 ui-monospace,monospace;white-space:pre-wrap}.hash{font:11px ui-monospace,monospace;overflow-wrap:anywhere;color:#d4e1f5}
+</style></head><body>
+<div class="card"><span class="pill">R_10 · RESEARCH ONLY · NO TRADES</span><h1>RESEARCH 204 — Mean Reversion</h1>
+<p>Separate research page. Hypothesis A only: after 3 or 4 consecutive same-direction price moves, does the next five-tick move reverse?</p>
+<div class="notice">203 FROZEN · 201B PROTECTED · REAL $10–$15 PROTECTED · NO DEMO AUTO-TRADING · NO CONTRACT PURCHASES</div>
+<p class="small">P/L estimate only: $0.35 stake, +$0.2625 net win, -$0.35 loss, $0 tie. Tick history does not include historical proposal payouts or execution costs.</p></div>
+<div class="card"><h2>1. Fetch 50,000 real R_10 ticks</h2>
+<p>Uses the existing TEST 201B authentication sequence: DEMO PAT + App ID → account lookup → secure OTP WebSocket → history requests only. Enter credentials manually; this page does not save them.</p>
+<label for="pat">Existing DEMO Personal Access Token (PAT)</label><input id="pat" type="password" autocomplete="off" placeholder="Enter the same DEMO PAT used before">
+<label for="appid">Existing Deriv App ID</label><input id="appid" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Enter the same App ID used before">
+<button id="fetch" class="primary" style="width:100%;margin-top:12px">FETCH 50,000 R_10 TICKS</button>
+<p id="status">Waiting. Nothing has been fetched yet.</p><div class="meter"><i id="bar"></i></div><p id="progress" class="small">0 / 50,000 ticks</p></div>
+<div class="card"><h2>2. Automatic split and lock</h2><div class="grid">
+<div><label>TRAIN</label><div class="stat" id="trainCount">Not loaded</div></div><div><label>UNSEEN</label><div class="stat" id="testCount">LOCKED · not loaded</div></div>
+<div><label>TRAIN date range</label><div class="small" id="trainRange">—</div></div><div><label>UNSEEN date range</label><div class="small" id="testRange">—</div></div>
+</div><p class="small">After a successful fetch, the oldest 35,000 ticks become TRAIN and the newest 15,000 become UNSEEN. Only TRAIN is passed to the analysis functions. UNSEEN is not tested, previewed, or used to choose settings.</p>
+<label>TRAIN SHA-256</label><div class="hash" id="trainHash">Not calculated</div><label>UNSEEN SHA-256</label><div class="hash" id="testHash">Not calculated</div><p class="small">The hash identifies the exact ordered timestamp/price records. The page's lock is a workflow safeguard, not tamper-proof encryption: because this runs in your browser, it cannot prevent someone with developer tools from inspecting memory. Do not treat it as a secure vault.</p></div>
+<div class="card"><h2>3. Hypothesis A — TRAIN only</h2>
+<p><b>3-in-a-row:</b> after three consecutive rises, predict FALL; after three consecutive falls, predict RISE.<br><b>4-in-a-row:</b> same rule after four consecutive moves.<br>Entry is the price at the end of the streak; outcome is price five ticks later. After each evaluated outcome, skip five ticks before looking for another signal. No overlapping outcome windows.</p>
+<p>Random baseline uses the exact same candidate entry points but picks RISE/FALL using a fixed seeded random sequence. This makes the comparison reproducible.</p>
+<button id="run" class="primary" style="width:100%" disabled>RUN TRAIN ANALYSIS ONLY</button>
+<div id="results"><p class="muted">Fetch and split the data first. No analysis has run.</p></div>
+<div class="notice" id="gate">UNSEEN remains locked. It will not be tested automatically.</div></div>
+<div class="card"><h2>Activity log</h2><div id="log">RESEARCH 204 ready. No credentials or market data are stored by this page.</div></div>
+<script>
+(()=>{'use strict';
+const $=id=>document.getElementById(id),CFG={symbol:'R_10',batch:5000,max:50000,stake:.35,win:.2625,loss:-.35,horizon:5,minTrades:1000,minRate:60};
+let socket=null,timer=null,busy=false,allRows=[],trainRows=[],unseenRows=[],trainHash='',unseenHash='';
+function log(s){$('log').textContent+='\n'+new Date().toLocaleTimeString()+'  '+s;$('log').scrollTop=$('log').scrollHeight}
+function status(s){$('status').textContent=s}
+function stop(){if(timer){clearTimeout(timer);timer=null}const w=socket;socket=null;busy=false;if(w){w.onopen=w.onmessage=w.onerror=w.onclose=null;try{w.close()}catch(e){}}$('fetch').disabled=false;$('run').disabled=!trainRows.length;$('pat').value=''}
+function fail(s){log(s);status('Fetch stopped. No analysis was run.');stop()}
+function dateRange(rows){return rows.length?new Date(rows[0].t*1000).toLocaleString()+' — '+new Date(rows[rows.length-1].t*1000).toLocaleString():'—'}
+function canonical(rows){return rows.map(x=>String(x.t)+','+Number(x.p).toPrecision(15)).join('\n')}
+async function hashRows(rows){const bytes=new TextEncoder().encode(canonical(rows));const digest=await crypto.subtle.digest('SHA-256',bytes);return [...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('')}
+function renderSplit(){
+$('trainCount').textContent=trainRows.length.toLocaleString()+' ticks';$('testCount').textContent=unseenRows.length.toLocaleString()+' ticks · LOCKED';
+$('trainRange').textContent=dateRange(trainRows);$('testRange').textContent=dateRange(unseenRows);
+$('trainHash').textContent=trainHash;$('testHash').textContent=unseenHash;
+$('run').disabled=false;$('gate').textContent='UNSEEN LOCKED · no test has been run on the final 15,000 ticks.';
+}
+function normalize(ts,ps){const rows=ps.map((p,i)=>({t:Number(ts[i]),p:Number(p),i})).filter(x=>Number.isFinite(x.t)&&Number.isFinite(x.p));rows.sort((a,b)=>a.t-b.t||a.i-b.i);const out=[];for(const r of rows)out.push({t:r.t,p:r.p});if(out.length!==50000)throw Error('Expected exactly 50,000 valid ticks; received '+out.length+'. Do not analyze a partial dataset.');return out}
+function stats(trades){
+let wins=0,losses=0,ties=0,pl=0,peak=0,dd=0,streak=0,longest=0;
+for(const x of trades){if(x.result==='W'){wins++;pl=+(pl+CFG.win).toFixed(4);streak=0}else if(x.result==='L'){losses++;pl=+(pl+CFG.loss).toFixed(4);streak++;longest=Math.max(longest,streak)}else{ties++;streak=0}peak=Math.max(peak,pl);dd=Math.max(dd,peak-pl)}
+const decisive=wins+losses;return {n:trades.length,wins,losses,ties,rate:decisive?100*wins/decisive:0,pl,dd,longest}
+}
+function seeded(seed){let x=seed>>>0;return ()=>{x=(1664525*x+1013904223)>>>0;return x/4294967296}}
+function evaluate(rows,streakLength,randomMode){
+const p=rows.map(x=>x.p),trades=[],rand=seeded(204000+streakLength);
+let i=streakLength;
+while(i+CFG.horizon<p.length){
+let up=true,down=true;
+for(let k=i-streakLength+1;k<=i;k++){if(!(p[k]>p[k-1]))up=false;if(!(p[k]<p[k-1]))down=false}
+if(up||down){
+const direction=randomMode?(rand()<.5?'UP':'DOWN'):(up?'DOWN':'UP');
+const entry=p[i],exit=p[i+CFG.horizon];
+const result=exit===entry?'T':((direction==='UP'&&exit>entry)||(direction==='DOWN'&&exit<entry))?'W':'L';
+trades.push({i,direction,result});i+=CFG.horizon;
+}else i++;
+}
+return stats(trades)
+}
+function card(name,s,baseline){
+const enough=s.n>=CFG.minTrades,clears=enough&&s.rate>=CFG.minRate&&s.pl>0;
+return '<div class="result"><b>'+name+'</b><div class="grid"><div><label>Trades</label><div class="stat">'+s.n.toLocaleString()+'</div></div><div><label>Win rate</label><div class="stat '+(s.rate>=60?'good':'bad')+'">'+s.rate.toFixed(2)+'%</div></div><div><label>Wins / losses / ties</label><div class="stat">'+s.wins+' / '+s.losses+' / '+s.ties+'</div></div><div><label>Estimated net P/L</label><div class="stat '+(s.pl>0?'good':'bad')+'">'+(s.pl<0?'-$'+Math.abs(s.pl).toFixed(2):'+$'+s.pl.toFixed(2))+'</div></div><div><label>Max drawdown</label><div class="stat">-$'+s.dd.toFixed(2)+'</div></div><div><label>Longest losing streak</label><div class="stat">'+s.longest+'</div></div></div><p class="small">Random baseline win rate: '+baseline.rate.toFixed(2)+'% · '+baseline.n+' matched candidate entries. '+(clears?'TRAIN GATE CLEARED':'TRAIN GATE NOT CLEARED')+'</p></div>'
+}
+function runTrain(){
+if(!trainRows.length||unseenRows.length!==15000){$('gate').textContent='BLOCKED: exact 35,000/15,000 split not available.';return}
+const a3=evaluate(trainRows,3,false),r3=evaluate(trainRows,3,true),a4=evaluate(trainRows,4,false),r4=evaluate(trainRows,4,true);
+$('results').innerHTML=card('3 consecutive moves → reverse',a3,r3)+card('4 consecutive moves → reverse',a4,r4);
+const p3=a3.n>=CFG.minTrades&&a3.rate>=CFG.minRate&&a3.pl>0,p4=a4.n>=CFG.minTrades&&a4.rate>=CFG.minRate&&a4.pl>0;
+$('gate').textContent=(p3||p4)?'TRAIN GATE: at least one variant meets 1,000 trades, 60% win rate and positive estimated P/L. UNSEEN IS STILL LOCKED. Choose the variant before any separate unlock decision.':'TRAIN GATE FAILED: neither variant meets all minimums (1,000 trades, 60% win rate, positive P/L). UNSEEN STAYS LOCKED. Hypothesis A is rejected for this dataset.';
+log('TRAIN-only analysis completed. UNSEEN arrays were not passed to either evaluator. 3-run '+a3.rate.toFixed(2)+'% / '+a3.n+' trades; 4-run '+a4.rate.toFixed(2)+'% / '+a4.n+' trades.');
+}
+async function fetchHistory(end,accP,accT,batches,ws){
+ws.send(JSON.stringify({ticks_history:CFG.symbol,count:CFG.batch,end:end,style:'ticks'}));
+}
+$('fetch').addEventListener('click',async()=>{
+if(busy)return;const pat=$('pat').value.trim(),appId=$('appid').value.trim();if(!pat||!appId){status('Enter the existing DEMO PAT and App ID.');return}
+busy=true;$('fetch').disabled=true;$('run').disabled=true;allRows=[];trainRows=[];unseenRows=[];$('trainHash').textContent='Not calculated';$('testHash').textContent='Not calculated';
+status('Authenticating with the same TEST 201B method…');$('bar').style.width='0%';$('progress').textContent='0 / 50,000 ticks';log('Starting DEMO account lookup and secure OTP. History-only requests; no proposals or buys.');
+timer=setTimeout(()=>fail('30-second timeout during authentication or history download.'),30000);
+try{
+const headers={'Authorization':'Bearer '+pat,'Deriv-App-ID':appId,'Content-Type':'application/json'};
+const ar=await fetch('https://api.derivws.com/trading/v1/options/accounts',{headers});
+const ab=await ar.json();if(!ar.ok)throw Error(ab.message||(ab.errors?.[0]?.message)||('Account HTTP '+ar.status));
+function findDemo(node){if(Array.isArray(node)){for(const x of node){const f=findDemo(x);if(f)return f}}else if(node&&typeof node==='object'){const id=node.account_id||node.accountId||node.id;const type=String(node.account_type||node.accountType||node.type||'').toLowerCase();if(id&&(type.includes('demo')||node.is_demo===true))return {id:String(id)};for(const v of Object.values(node)){if(v&&typeof v==='object'){const f=findDemo(v);if(f)return f}}}return null}
+const acct=findDemo(ab.data||ab);if(!acct)throw Error('No DEMO Options account found for this PAT.');
+const or=await fetch('https://api.derivws.com/trading/v1/options/accounts/'+encodeURIComponent(acct.id)+'/otp',{method:'POST',headers});
+const ob=await or.json();if(!or.ok||!ob.data?.url)throw Error(ob.message||(ob.errors?.[0]?.message)||('OTP HTTP '+or.status));
+if(timer){clearTimeout(timer);timer=null}socket=new WebSocket(ob.data.url);const current=socket;
+timer=setTimeout(()=>fail('30-second timeout waiting for authenticated WebSocket/history.'),30000);
+let batch=0,older='latest',psAll=[],tsAll=[];
+current.onopen=()=>{if(socket!==current)return;log('Authenticated socket open. Requesting first 5,000 ticks.');fetchHistory(older,psAll,tsAll,batch,current)};
+current.onmessage=async ev=>{
+if(socket!==current||!busy)return;let d;try{d=JSON.parse(ev.data)}catch(e){fail('Invalid JSON from Deriv.');return}
+if(d.error){fail('Deriv error: '+d.error.message);return}
+if(d.msg_type!=='history'||!d.history)return;
+const ps=(d.history.prices||[]).map(Number),ts=(d.history.times||[]).map(Number);
+if(!ps.length||ps.length!==ts.length||ps.some(x=>!Number.isFinite(x))||ts.some(x=>!Number.isFinite(x))){fail('Invalid or empty history batch.');return}
+psAll=ps.concat(psAll);tsAll=ts.concat(tsAll);batch++;
+$('bar').style.width=(psAll.length/CFG.max*100)+'%';$('progress').textContent=psAll.length.toLocaleString()+' / 50,000 ticks · batch '+batch+'/10';
+log('Received history batch '+batch+'; total '+psAll.length+'.');
+if(psAll.length<CFG.max&&ps.length===CFG.batch&&batch<10){older=ts[0]-1;try{await fetchHistory(older,psAll,tsAll,batch,current)}catch(e){fail(e.message)}return}
+if(psAll.length!==CFG.max){fail('Download ended at '+psAll.length+' ticks, not 50,000. Partial data rejected; no split or analysis.');return}
+stop();try{
+allRows=normalize(tsAll,psAll);trainRows=allRows.slice(0,35000);unseenRows=allRows.slice(35000);
+status('50,000 ticks fetched. Split completed. UNSEEN remains locked.');
+log('Exact 50,000-tick dataset verified and sorted oldest to newest. Split 35,000 TRAIN / 15,000 UNSEEN.');
+trainHash=await hashRows(trainRows);unseenHash=await hashRows(unseenRows);renderSplit();
+}catch(e){status('Data validation failed: '+e.message);log(e.message);$('run').disabled=true}
+};
+current.onerror=()=>{if(socket===current)fail('WebSocket error during history download.')};
+current.onclose=e=>{if(socket===current&&busy)fail('WebSocket closed during fetch · code '+e.code)};
+}catch(e){fail(e.message)}
+});
+$('run').addEventListener('click',runTrain);
+})();
+</script></body></html>
