@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="theme-color" content="#10141c">
+<title>Deriv TEST 202 · Historical Tick Backtest</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,Arial,sans-serif;background:#10141c;color:#f4f6fb}
+*{box-sizing:border-box}body{margin:0;padding:14px;max-width:760px;margin:auto}
+.card{background:#1b222d;border:1px solid #303b4b;border-radius:16px;padding:16px;margin:12px 0}
+h1{font-size:23px;margin:8px 0}h2{font-size:17px;margin:0 0 12px}
+p,.muted{color:#b8c3d2;font-size:14px;line-height:1.5}
+label{display:block;font-size:13px;color:#cbd5e1;margin:10px 0 5px}
+input{width:100%;padding:13px;border-radius:10px;border:1px solid #455165;background:#10151d;color:#fff;font-size:16px}
+button{padding:14px;border:0;border-radius:11px;font-weight:750;font-size:15px;cursor:pointer}
+button:disabled{opacity:.4;cursor:not-allowed}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.primary{background:#1677ff;color:white}.secondary{background:#344154;color:white}
+.stat{font-size:21px;font-weight:750;overflow-wrap:anywhere}.pill{display:inline-block;padding:5px 9px;border-radius:20px;background:#313e50;font-size:12px}
+.warning{border-left:4px solid #e5a63a;padding-left:10px}
+.notice{background:#352817;border:1px solid #8a5a20;border-radius:12px;padding:13px;color:#ffdc9c;font-weight:750}
+.green{color:#37df9d}.red{color:#ff7187}.small{font-size:12px}
+#log{height:150px;overflow:auto;background:#070a0f;color:#b9d6ff;border-radius:10px;padding:12px;font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+</style>
+</head>
+<body>
+<div class="card">
+<span class="pill">DERIV · HISTORICAL DATA · NO LIVE TRADES</span>
+<h1>TEST 202 · R_10 Tick Backtest</h1>
+<p>Replays historical Volatility 10 ticks using the same three-consecutive-tick direction signal and five-tick contract horizon as TEST 201B.</p>
+<div class="notice">ESTIMATED PROFIT ONLY — NOT HISTORICAL DERIV PAYOUTS</div>
+<p class="small">Historical ticks show price movement only. They do not contain the exact Deriv proposal payout available at each past moment. This backtest assumes every signal passes the live 75% payout filter and estimates each win as +$0.2625 and each loss as -$0.35. Actual historical profitability cannot be established from tick prices alone.</p>
+</div>
+
+<div class="card">
+<h2>Backtest settings</h2>
+<div class="grid">
+<div><label>Market</label><div class="stat">R_10</div></div>
+<div><label>History size</label><div class="stat">5,000 ticks</div></div>
+<div><label>Stake (simulation)</label><div class="stat">$0.35</div></div>
+<div><label>Assumed win profit</label><div class="stat green">+$0.2625</div></div>
+<div><label>Assumed loss</label><div class="stat red">-$0.35</div></div>
+<div><label>Loss stop</label><div class="stat">-$5.00</div></div>
+</div>
+<label>Deriv App ID (public market data only; no PAT required)</label>
+<input id="appid" inputmode="numeric" autocomplete="off" placeholder="Enter your Deriv App ID">
+<div class="row" style="margin-top:12px">
+<button class="primary" id="run">FETCH 5,000 TICKS & BACKTEST</button>
+<button class="secondary" id="clear">CLEAR RESULTS</button>
+</div>
+<p id="status">Ready. This page does not place trades or connect to your account.</p>
+</div>
+
+<div class="card">
+<h2>TEST 202 results</h2>
+<div class="grid">
+<div><label>Signals found</label><div class="stat" id="signals">--</div></div>
+<div><label>Simulated trades</label><div class="stat" id="trades">--</div></div>
+<div><label>Wins</label><div class="stat green" id="wins">--</div></div>
+<div><label>Losses</label><div class="stat red" id="losses">--</div></div>
+<div><label>Ties / refunds</label><div class="stat" id="ties">--</div></div>
+<div><label>Signal accuracy</label><div class="stat" id="accuracy">--</div></div>
+<div><label>Estimated net P/L</label><div class="stat" id="profit">--</div></div>
+<div><label>Estimated max drawdown</label><div class="stat" id="drawdown">--</div></div>
+<div><label>Ticks received</label><div class="stat" id="tickCount">--</div></div>
+<div><label>Test status</label><div class="stat" id="testStatus">NOT RUN</div></div>
+</div>
+<p class="small" id="range">Historical time range: --</p>
+<p class="small" id="stopNote">The simulation stops early if estimated cumulative P/L reaches -$5.00.</p>
+</div>
+
+<div class="card">
+<h2>Live 201B comparison</h2>
+<div class="grid">
+<div><label>Live 201B win rate (snapshot)</label><div class="stat">63.0%</div></div>
+<div><label>Live settled trades (snapshot)</label><div class="stat">73</div></div>
+</div>
+<p class="small">Comparison uses the user-reported 201B snapshot of 46 wins and 27 losses at trade 73. It is not automatically synchronized with the live page. Compare only after noting the exact live test progress.</p>
+<p id="comparison">Backtest comparison will appear after a successful run.</p>
+</div>
+
+<div class="card">
+<h2>Exact replay rules</h2>
+<p>At each eligible tick i, the last three prices must be strictly rising (CALL) or strictly falling (PUT). Entry is the price at tick i. The simulated contract settles at tick i+5. CALL wins only if the settlement price is higher; PUT wins only if it is lower; equal prices are ties with zero simulated P/L.</p>
+<p>Ticks i+1 through i+5 are collected but no new trade is opened. The next signal check is tick i+6, using the latest three ticks, including ticks observed during the previous contract.</p>
+<p class="warning">The historical replay cannot reproduce the live payout filter, changing quotes, execution delays, or actual contract settlement prices. Estimated P/L is an illustration, not a Deriv statement or a prediction of future returns.</p>
+</div>
+
+<div class="card">
+<h2>Activity log</h2>
+<div id="log">TEST 202 ready. Enter a Deriv App ID and fetch historical R_10 ticks.</div>
+</div>
+
+<script>
+(function(){
+"use strict";
+const $=id=>document.getElementById(id);
+const SYMBOL="R_10",TICK_COUNT=5000,EXPIRY=5,STAKE=0.35,WIN_PROFIT=0.2625,LOSS=-0.35,LOSS_LIMIT=-5;
+let socket=null,busy=false;
+function log(message){
+  $("log").textContent+="\n"+new Date().toLocaleTimeString()+"  "+message;
+  $("log").scrollTop=$("log").scrollHeight;
+}
+function money(n){return (n>=0?"+$":"-$")+Math.abs(n).toFixed(2);}
+function clearResults(){
+  ["signals","trades","wins","losses","ties","accuracy","profit","drawdown","tickCount"].forEach(id=>$(id).textContent="--");
+  $("range").textContent="Historical time range: --";
+  $("testStatus").textContent="NOT RUN";
+  $("comparison").textContent="Backtest comparison will appear after a successful run.";
+  $("stopNote").textContent="The simulation stops early if estimated cumulative P/L reaches -$5.00.";
+}
+function finishSocket(){
+  if(socket){try{socket.close();}catch(e){}socket=null;}
+  busy=false;$("run").disabled=false;
+}
+function runReplay(prices,times){
+  let signals=0,trades=0,wins=0,losses=0,ties=0,profit=0,peak=0,maxDD=0,stopAt=null;
+  let i=2;
+  while(i+EXPIRY<prices.length){
+    const a=prices[i-2],b=prices[i-1],c=prices[i];
+    const call=(b>a&&c>b),put=(b<a&&c<b);
+    if(!call&&!put){i++;continue;}
+    signals++;
+    const entry=prices[i],exit=prices[i+EXPIRY];
+    trades++;
+    if((call&&exit>entry)||(put&&exit<entry)){
+      wins++;profit=Number((profit+WIN_PROFIT).toFixed(4));
+    }else if(exit===entry){
+      ties++;
+    }else{
+      losses++;profit=Number((profit+LOSS).toFixed(4));
+    }
+    peak=Math.max(peak,profit);
+    maxDD=Math.max(maxDD,peak-profit);
+    if(profit<=LOSS_LIMIT){stopAt=trades;break;}
+    // Contract occupied ticks i+1...i+5; next signal check is i+6.
+    i+=EXPIRY+1;
+  }
+  const decisive=wins+losses;
+  const accuracy=decisive?wins/decisive*100:0;
+  $("signals").textContent=String(signals);
+  $("trades").textContent=String(trades);
+  $("wins").textContent=String(wins);
+  $("losses").textContent=String(losses);
+  $("ties").textContent=String(ties);
+  $("accuracy").textContent=decisive?accuracy.toFixed(1)+"%":"N/A";
+  $("profit").textContent=money(profit);
+  $("profit").className="stat "+(profit>=0?"green":"red");
+  $("drawdown").textContent="-$"+maxDD.toFixed(2);
+  $("tickCount").textContent=String(prices.length);
+  if(times&&times.length){
+    const first=new Date(times[0]*1000),last=new Date(times[times.length-1]*1000);
+    $("range").textContent="Historical time range: "+first.toLocaleString()+" — "+last.toLocaleString();
+  }
+  $("testStatus").textContent=stopAt?"STOPPED AT -$5 LIMIT":"COMPLETED";
+  $("stopNote").textContent=stopAt?"Simulation stopped at trade "+stopAt+" after estimated cumulative P/L reached the -$5.00 limit.":"All eligible historical ticks were processed; no -$5.00 estimated loss stop was reached.";
+  $("comparison").textContent="Live 201B snapshot: 63.0% (73 trades) · TEST 202: "+(decisive?accuracy.toFixed(1)+"%":"N/A")+" ("+trades+" simulated trades; "+ties+" ties excluded from accuracy).";
+  log("Replay complete · "+trades+" simulated trades · "+wins+" wins / "+losses+" losses / "+ties+" ties · estimated P/L "+money(profit)+" · max drawdown -$"+maxDD.toFixed(2)+".");
+  log("Signal accuracy excludes ties and is based on historical price direction, not Deriv payout profitability.");
+}
+$("run").addEventListener("click",function(){
+  if(busy)return;
+  const appid=$("appid").value.trim();
+  if(!/^\d+$/.test(appid)){alert("Enter your numeric Deriv App ID first.");return;}
+  clearResults();busy=true;$("run").disabled=true;
+  $("status").textContent="Connecting to Deriv public market data…";
+  log("Requesting latest "+TICK_COUNT+" historical "+SYMBOL+" ticks. No PAT and no trade permissions are used.");
+  try{
+    socket=new WebSocket("wss://ws.derivws.com/websockets/v3?app_id="+encodeURIComponent(appid));
+    const timeout=setTimeout(function(){
+      if(busy){$("status").textContent="Request timed out. Check connection and App ID, then try again.";log("Timed out waiting for historical tick data.");finishSocket();}
+    },30000);
+    socket.onopen=function(){
+      if(!busy)return;
+      $("status").textContent="Fetching "+TICK_COUNT+" historical R_10 ticks…";
+      socket.send(JSON.stringify({ticks_history:SYMBOL,count:TICK_COUNT,end:"latest",style:"ticks"}));
+    };
+    socket.onmessage=function(event){
+      if(!busy)return;
+      let data;try{data=JSON.parse(event.data);}catch(e){return;}
+      if(data.error){
+        clearTimeout(timeout);
+        $("status").textContent="Deriv API error: "+data.error.message;
+        log("Deriv API error: "+data.error.message);
+        finishSocket();return;
+      }
+      if(data.msg_type==="history"&&data.history){
+        clearTimeout(timeout);
+        const prices=(data.history.prices||[]).map(Number);
+        const times=(data.history.times||[]).map(Number);
+        if(prices.length<8||prices.some(v=>!Number.isFinite(v))){
+          $("status").textContent="Not enough valid historical ticks returned.";
+          log("History response contained too few valid ticks.");
+        }else{
+          $("status").textContent="Received "+prices.length+" historical R_10 ticks. Running replay…";
+          log("Received "+prices.length+" ticks. Running exact five-tick replay loop.");
+          runReplay(prices,times);
+          $("status").textContent="Backtest finished. No live trades were placed.";
+        }
+        finishSocket();
+      }
+    };
+    socket.onerror=function(){
+      if(!busy)return;
+      clearTimeout(timeout);$("status").textContent="Connection error. Check internet and App ID.";
+      log("WebSocket connection error while fetching history.");finishSocket();
+    };
+    socket.onclose=function(){
+      if(busy){clearTimeout(timeout);$("status").textContent="Connection closed before results arrived.";log("Connection closed before history response.");finishSocket();}
+    };
+  }catch(e){
+    $("status").textContent="Could not start request: "+e.message;
+    log("Request error: "+e.message);finishSocket();
+  }
+});
+$("clear").addEventListener("click",function(){
+  if(busy){alert("Wait for the current history request to finish.");return;}
+  clearResults();$("status").textContent="Results cleared. No saved live-test data was touched.";
+  $("log").textContent="TEST 202 results cleared. TEST 201A and TEST 201B data are separate and unchanged.";
+});
+})();
+</script>
+</body>
+</html>
