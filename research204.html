@@ -27,7 +27,7 @@
 <div class="card"><h2>Activity log</h2><div id="log">RESEARCH 204 ready. No credentials or market data are stored by this page.</div></div>
 <script>
 (()=>{'use strict';
-const $=id=>document.getElementById(id),CFG={symbol:'R_10',batch:5000,max:50000,stake:.35,win:.2625,loss:-.35,horizon:5,minTrades:1000,minRate:60};
+const $=id=>document.getElementById(id),CFG={symbol:'R_10',batch:1000,batches:50,max:50000,stake:.35,win:.2625,loss:-.35,horizon:5,minTrades:1000,minRate:60};
 let socket=null,timer=null,busy=false,allRows=[],trainRows=[],unseenRows=[],trainHash='',unseenHash='';
 function log(s){$('log').textContent+='\n'+new Date().toLocaleTimeString()+'  '+s;$('log').scrollTop=$('log').scrollHeight}
 function status(s){$('status').textContent=s}
@@ -76,7 +76,7 @@ const p3=a3.n>=CFG.minTrades&&a3.rate>=CFG.minRate&&a3.pl>0,p4=a4.n>=CFG.minTrad
 $('gate').textContent=(p3||p4)?'TRAIN GATE: at least one variant meets 1,000 trades, 60% win rate and positive estimated P/L. UNSEEN IS STILL LOCKED. Choose the variant before any separate unlock decision.':'TRAIN GATE FAILED: neither variant meets all minimums (1,000 trades, 60% win rate, positive P/L). UNSEEN STAYS LOCKED. Hypothesis A is rejected for this dataset.';
 log('TRAIN-only analysis completed. UNSEEN arrays were not passed to either evaluator. 3-run '+a3.rate.toFixed(2)+'% / '+a3.n+' trades; 4-run '+a4.rate.toFixed(2)+'% / '+a4.n+' trades.');
 }
-async function fetchHistory(end,accP,accT,batches,ws){
+function fetchHistory(end,ws){
 ws.send(JSON.stringify({ticks_history:CFG.symbol,count:CFG.batch,end:end,style:'ticks'}));
 }
 $('fetch').addEventListener('click',async()=>{
@@ -94,20 +94,24 @@ const or=await fetch('https://api.derivws.com/trading/v1/options/accounts/'+enco
 const ob=await or.json();if(!or.ok||!ob.data?.url)throw Error(ob.message||(ob.errors?.[0]?.message)||('OTP HTTP '+or.status));
 if(timer){clearTimeout(timer);timer=null}socket=new WebSocket(ob.data.url);const current=socket;
 timer=setTimeout(()=>fail('30-second timeout waiting for authenticated WebSocket/history.'),30000);
-let batch=0,older='latest',psAll=[],tsAll=[];
-current.onopen=()=>{if(socket!==current)return;log('Authenticated socket open. Requesting first 5,000 ticks.');fetchHistory(older,psAll,tsAll,batch,current)};
+let batch=0,older='latest',psAll=[],tsAll=[],attempt=0;
+function armBatchTimeout(){if(timer)clearTimeout(timer);timer=setTimeout(()=>retryBatch('Batch '+(batch+1)+' timed out.'),20000)}
+function retryBatch(reason){if(socket!==current||!busy)return;if(timer){clearTimeout(timer);timer=null}if(attempt<2){attempt++;log(reason+' Retrying batch '+(batch+1)+' (retry '+attempt+'/2).');armBatchTimeout();try{fetchHistory(older,current)}catch(e){retryBatch('Send failed: '+e.message)}return}fail(reason+' Batch '+(batch+1)+' failed after 2 retries. Partial data rejected; no split or analysis.')}
+function requestCurrentBatch(){attempt=0;armBatchTimeout();try{fetchHistory(older,current)}catch(e){retryBatch('Send failed: '+e.message)}}
+current.onopen=()=>{if(socket!==current)return;log('Authenticated socket open. Requesting 50 batches of 1,000 ticks.');requestCurrentBatch()};
 current.onmessage=async ev=>{
-if(socket!==current||!busy)return;let d;try{d=JSON.parse(ev.data)}catch(e){fail('Invalid JSON from Deriv.');return}
-if(d.error){fail('Deriv error: '+d.error.message);return}
+if(socket!==current||!busy)return;let d;try{d=JSON.parse(ev.data)}catch(e){retryBatch('Invalid JSON response.');return}
+if(d.error){retryBatch('Deriv error: '+d.error.message);return}
 if(d.msg_type!=='history'||!d.history)return;
 const ps=(d.history.prices||[]).map(Number),ts=(d.history.times||[]).map(Number);
-if(!ps.length||ps.length!==ts.length||ps.some(x=>!Number.isFinite(x))||ts.some(x=>!Number.isFinite(x))){fail('Invalid or empty history batch.');return}
-psAll=ps.concat(psAll);tsAll=ts.concat(tsAll);batch++;
-$('bar').style.width=(psAll.length/CFG.max*100)+'%';$('progress').textContent=psAll.length.toLocaleString()+' / 50,000 ticks · batch '+batch+'/10';
-log('Received history batch '+batch+'; total '+psAll.length+'.');
-if(psAll.length<CFG.max&&ps.length===CFG.batch&&batch<10){older=ts[0]-1;try{await fetchHistory(older,psAll,tsAll,batch,current)}catch(e){fail(e.message)}return}
+if(ps.length!==CFG.batch||ps.length!==ts.length||ps.some(x=>!Number.isFinite(x))||ts.some(x=>!Number.isFinite(x))){retryBatch('Invalid batch: expected exactly 1,000 valid ticks, received '+ps.length+'.');return}
+if(timer){clearTimeout(timer);timer=null}
+attempt=0;psAll=ps.concat(psAll);tsAll=ts.concat(tsAll);batch++;
+$('bar').style.width=(psAll.length/CFG.max*100)+'%';$('progress').textContent=psAll.length.toLocaleString()+' / 50,000 ticks · batch '+batch+'/50';
+log('Received batch '+batch+'/50; total '+psAll.length+' ticks.');
+if(psAll.length<CFG.max){older=ts[0]-1;requestCurrentBatch();return}
 if(psAll.length!==CFG.max){fail('Download ended at '+psAll.length+' ticks, not 50,000. Partial data rejected; no split or analysis.');return}
-stop();try{
+if(timer){clearTimeout(timer);timer=null}stop();try{
 allRows=normalize(tsAll,psAll);trainRows=allRows.slice(0,35000);unseenRows=allRows.slice(35000);
 status('50,000 ticks fetched. Split completed. UNSEEN remains locked.');
 log('Exact 50,000-tick dataset verified and sorted oldest to newest. Split 35,000 TRAIN / 15,000 UNSEEN.');
