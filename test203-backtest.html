@@ -194,7 +194,7 @@ function connectSocket(){
 $("run").addEventListener("click",function(){
  if(busy)return;
  appId=$("appid").value.trim();
- if(!/^\\d+$/.test(appId)){alert("Enter the numeric Deriv App ID only. Do not enter your PAT.");return;}
+ if(!/^\d+$/.test(appId)){alert("Enter the numeric Deriv App ID only. Do not enter your PAT.");return;}
  clearResults();prices=[];times=[];batchCount=0;lastOldest=null;requestEnd="latest";hostIndex=0;attemptNo=0;busy=true;socket=null;
  $("run").disabled=true;$("status").textContent="Connecting to public historical market data…";
  log("Starting history download: up to "+(BATCH*MAX_BATCHES).toLocaleString()+" R_10 ticks. No PAT, no account authorization, no trade requests.");
