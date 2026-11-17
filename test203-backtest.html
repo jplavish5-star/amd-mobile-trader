@@ -121,11 +121,10 @@ if(!rows.length)throw Error("No valid timestamp/price values found in JSON.");
 return rows;
 }
 function normalizeRows(rows){
-const sorted=rows.slice().sort((a,b)=>a.t-b.t);
-const unique=[];let last=null;
-for(const r of sorted){if(r.t===last)continue;unique.push(r);last=r.t;}
-if(unique.length<40)throw Error("At least 40 valid unique ticks are required for the 203 filters.");
-return {times:unique.map(x=>x.t),prices:unique.map(x=>x.p)};
+// Tick feeds can contain multiple genuine ticks in the same second; retain them.
+const sorted=rows.map((r,i)=>({...r,_i:i})).sort((a,b)=>a.t-b.t||a._i-b._i);
+if(sorted.length<40)throw Error("At least 40 valid ticks are required for the 203 filters.");
+return {times:sorted.map(x=>x.t),prices:sorted.map(x=>x.p)};
 }
 function runSegment(p){
 let signals=0,trades=0,wins=0,losses=0,ties=0,pl=0,peak=0,dd=0,streak=0,longest=0;
