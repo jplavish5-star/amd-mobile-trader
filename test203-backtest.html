@@ -2,279 +2,223 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<meta name="theme-color" content="#10141c"><title>Deriv TEST 203 · Historical Backtest</title>
+<meta name="theme-color" content="#10141c"><title>TEST 203 · Offline Historical Backtest</title>
 <style>
 :root{color-scheme:dark;font-family:system-ui,Arial,sans-serif;background:#10141c;color:#f4f6fb}
-*{box-sizing:border-box}body{margin:0;padding:14px;max-width:760px;margin:auto}
+*{box-sizing:border-box}body{margin:0;padding:14px;max-width:820px;margin:auto}
 .card{background:#1b222d;border:1px solid #303b4b;border-radius:16px;padding:16px;margin:12px 0}
 h1{font-size:23px;margin:8px 0}h2{font-size:17px;margin:0 0 12px}
 p,.muted{color:#b8c3d2;font-size:14px;line-height:1.5}label{display:block;font-size:13px;color:#cbd5e1;margin:10px 0 5px}
-input{width:100%;padding:13px;border-radius:10px;border:1px solid #455165;background:#10151d;color:#fff;font-size:16px}
-button{padding:14px;border:0;border-radius:11px;font-weight:750;font-size:15px;cursor:pointer}button:disabled{opacity:.4;cursor:not-allowed}
+input{width:100%;padding:13px;border-radius:10px;border:1px solid #455165;background:#10151d;color:#fff;font-size:15px}
+button{padding:14px;border:0;border-radius:11px;font-weight:750;font-size:14px;cursor:pointer}button:disabled{opacity:.4;cursor:not-allowed}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.primary{background:#1677ff;color:white}.secondary{background:#344154;color:white}
-.stat{font-size:21px;font-weight:750;overflow-wrap:anywhere}.pill{display:inline-block;padding:5px 9px;border-radius:20px;background:#313e50;font-size:12px}
+.stat{font-size:20px;font-weight:750;overflow-wrap:anywhere}.pill{display:inline-block;padding:5px 9px;border-radius:20px;background:#313e50;font-size:12px}
 .notice{background:#352817;border:1px solid #8a5a20;border-radius:12px;padding:13px;color:#ffdc9c;font-weight:750}
 .green{color:#37df9d}.red{color:#ff7187}.small{font-size:12px}
-#log{height:170px;overflow:auto;background:#070a0f;color:#b9d6ff;border-radius:10px;padding:12px;font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.warning{border-left:4px solid #e5a63a;padding-left:10px}
-</style></head><body>
+#log{height:150px;overflow:auto;background:#070a0f;color:#b9d6ff;border-radius:10px;padding:12px;font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.periods{display:grid;grid-template-columns:1fr;gap:10px}
+.period{background:#121923;border:1px solid #354154;border-radius:12px;padding:12px}
+.meter{height:8px;background:#303b4b;border-radius:8px;overflow:hidden}.meter>i{display:block;height:100%;width:0;background:#37df9d}
+</style></head>
+<body>
 <div class="card">
-<span class="pill">DERIV · HISTORICAL DATA · NO LIVE TRADES</span>
-<h1>TEST 203 · Historical Backtest</h1>
-<p>Offline replay of historical R_10 tick prices using TEST 203's 8-tick trend confirmation, 6-of-8 direction rule, 65% efficiency threshold, 0.60×–1.80× volatility filter, and 5-tick contract horizon.</p>
-<div class="notice">BACKTEST ONLY — NO PAT, NO CONTRACT PURCHASES, NO REAL OR DEMO TRADES</div>
-<p class="small">The page downloads public historical ticks, then performs the replay locally. Historical tick data do not include the exact past Deriv proposal payout. Estimated results assume every qualifying signal passes the live 75% net-return payout filter: +$0.2625 per win, -$0.35 per loss, and $0 for a tie. This is an estimate, not actual historical account performance.</p>
+<span class="pill">DERIV R_10 · HISTORICAL DATA · NO LIVE TRADES</span>
+<h1>TEST 203 · Offline Historical Backtest</h1>
+<p>Import genuine R_10 tick history as CSV or JSON, or fetch public history directly. All replay calculations run locally in this page.</p>
+<div class="notice">BACKTEST ONLY — NO PAT · NO LOGIN · NO CONTRACT PURCHASES · NO REAL OR DEMO TRADES</div>
+<p class="small">Assumed contract economics: $0.35 stake, $0.6125 total payout on a win (+$0.2625 net), -$0.35 on a loss, $0 on a tie. Tick history does not contain past proposal payouts, so P/L is an estimate and does not prove executable profitability.</p>
 </div>
 <div class="card">
-<h2>Backtest settings</h2><div class="grid">
+<h2>Import real historical data</h2>
+<label for="file">Choose a CSV or JSON file</label>
+<input id="file" type="file" accept=".csv,.json,.txt,application/json,text/csv">
+<p class="small">CSV format: two columns with headers <b>timestamp,price</b>. JSON accepts a Deriv history response (history.times + history.prices), {times,prices}, or an array of {timestamp,price} records.</p>
+<div class="row"><button class="primary" id="upload">LOAD FILE & RUN TEST</button><button class="secondary" id="clear">CLEAR RESULTS</button></div>
+</div>
+<div class="card">
+<h2>Fetch public Deriv R_10 history</h2>
+<p>Uses public ticks_history only, with App ID 1089. No PAT field, no authorize call and no account connection. Downloads up to 50,000 ticks in 5,000-tick batches.</p>
+<div class="grid">
 <div><label>Market</label><div class="stat">R_10</div></div>
-<div><label>Target trades</label><div class="stat">1,000</div></div>
-<div><label>Stake (simulation)</label><div class="stat">$0.35</div></div>
-<div><label>Win assumption</label><div class="stat green">+$0.2625</div></div>
-<div><label>Loss assumption</label><div class="stat red">-$0.35</div></div>
-<div><label>Contract duration</label><div class="stat">5 ticks</div></div>
-<div><label>Trend window</label><div class="stat">8 moves · 6 agree</div></div>
-<div><label>Efficiency</label><div class="stat">≥65%</div></div>
-<div><label>Volatility filter</label><div class="stat">0.60×–1.80×</div></div>
-<div><label>Historical download</label><div class="stat">Up to 50,000 ticks</div></div>
+<div><label>Maximum history</label><div class="stat">50,000 ticks</div></div>
+<div><label>App ID</label><div class="stat">1089 (public)</div></div>
+<div><label>Connection timeout</label><div class="stat">30 seconds</div></div>
 </div>
-<label>Deriv App ID (public history only; numeric App ID; no PAT)</label>
-<input id="appid" inputmode="numeric" autocomplete="off" placeholder="Enter your numeric Deriv App ID">
-<div class="row" style="margin-top:12px"><button class="primary" id="run">FETCH HISTORY & BACKTEST</button><button class="secondary" id="clear">CLEAR RESULTS</button></div>
-<p id="status">Ready. This page does not connect to your trading account or place trades.</p>
+<button class="primary" id="fetch" style="width:100%;margin-top:12px">FETCH REAL R_10 HISTORY</button>
+<p id="status">Ready. Upload a file or fetch public R_10 history.</p>
+<div class="meter"><i id="progress"></i></div>
+<p class="small" id="progressText">No download running.</p>
 </div>
-<div class="card"><h2>TEST 203 backtest results</h2><div class="grid">
-<div><label>Qualifying signals</label><div class="stat" id="signals">--</div></div>
-<div><label>Simulated trades</label><div class="stat" id="trades">--</div></div>
-<div><label>Wins</label><div class="stat green" id="wins">--</div></div>
-<div><label>Losses</label><div class="stat red" id="losses">--</div></div>
-<div><label>Ties / refunds</label><div class="stat" id="ties">--</div></div>
-<div><label>Win rate (ties excluded)</label><div class="stat" id="winrate">--</div></div>
-<div><label>Estimated net P/L</label><div class="stat" id="profit">--</div></div>
-<div><label>Maximum drawdown</label><div class="stat" id="drawdown">--</div></div>
+<div class="card">
+<h2>Overall result</h2>
+<div class="grid">
+<div><label>Ticks loaded</label><div class="stat" id="ticks">--</div></div>
+<div><label>Signals / trades</label><div class="stat" id="trades">--</div></div>
+<div><label>Wins / losses / ties</label><div class="stat" id="record">--</div></div>
+<div><label>Win rate (ties excluded)</label><div class="stat" id="rate">--</div></div>
+<div><label>Estimated net P/L</label><div class="stat" id="pl">--</div></div>
+<div><label>Maximum drawdown</label><div class="stat" id="dd">--</div></div>
 <div><label>Longest losing streak</label><div class="stat" id="streak">--</div></div>
-<div><label>Historical ticks used</label><div class="stat" id="tickCount">--</div></div>
-<div><label>History batches</label><div class="stat" id="batches">--</div></div>
 <div><label>Evaluation</label><div class="stat" id="verdict">NOT RUN</div></div>
-</div><p class="small" id="range">Historical time range: --</p><p class="small" id="note">A pass requires 1,000 simulated trades, at least 58% win rate, and positive estimated P/L. Passing is not a guarantee of future profitability.</p></div>
-<div class="card"><h2>How the replay matches TEST 203</h2>
-<p>At each eligible price index, it calculates the latest 8 price changes and the preceding 20-change volatility baseline. It requires at least 6 of 8 changes in one direction, net directional efficiency of at least 65%, and recent average absolute movement between 0.60× and 1.80× the baseline.</p>
-<p>A qualifying CALL wins if the price 5 ticks later is higher; a PUT wins if it is lower; an equal exit is a tie. It does not open overlapping simulated contracts: after an entry at tick i, the next signal check is tick i+6.</p>
-<p class="warning">Important limitation: past proposal payouts, execution latency, and exact live quote availability are not contained in historical ticks. The backtest assumes the live payout filter passes every signal. A win rate below 58%, fewer than 1,000 trades, or non-positive estimated P/L means TEST 203 is NOT cleared for live DEMO testing yet. Even a pass only justifies further DEMO research, never real-money use.</p>
 </div>
-<div class="card"><h2>Activity log</h2><div id="log">TEST 203 Backtest ready. Enter numeric App ID to download historical R_10 prices. No PAT is needed.</div></div>
+<p class="small" id="range">Data range: --</p>
+</div>
+<div class="card">
+<h2>Results by historical period</h2>
+<p>Each section is tested independently using the same rules. The first, middle and last 10,000 ticks are selected from the chronologically sorted dataset.</p>
+<div class="periods" id="periods"><div class="period muted">Load history to calculate the three period reports.</div></div>
+</div>
+<div class="card">
+<h2>TEST 203 rules used</h2>
+<p>8 most recent price moves; at least 6 of 8 must agree in direction; directional efficiency at least 65%; recent volatility must be 0.60×–1.80× the preceding 20-move baseline; contract settles after 5 ticks. Simulated trades do not overlap: the next signal is checked after settlement.</p>
+<p class="small">A research pass requires at least 1,000 trades, at least 58% wins excluding ties, and positive estimated P/L. A pass is not permission for real-money trading. Results are not cleared for live DEMO automatically.</p>
+</div>
+<div class="card"><h2>Activity log</h2><div id="log">TEST 203 offline backtester ready. No PAT or account login is used.</div></div>
 <script>
 (function(){
 "use strict";
 const $=id=>document.getElementById(id);
-const SYMBOL="R_10",BATCH=5000,MAX_BATCHES=10,TARGET=1000,EXPIRY=5,STAKE=0.35,WIN=0.2625,LOSS=-0.35;
-let socket=null,busy=false,timer=null,retryTimer=null,pingTimer=null,pongTimer=null,prices=[],times=[],batchCount=0,requestEnd="latest",lastOldest=null,appId="",attemptNo=0,activeSocketUrl="",historyStarted=false;
-const WS_HOST="ws.derivws.com",MAX_CONNECT_ATTEMPTS=3,PING_INTERVAL=20000;
+const CFG={symbol:"R_10",appId:1089,batch:5000,maxTicks:50000,timeout:30000,expiry:5,stake:.35,win:.2625,loss:-.35,target:1000,threshold:58};
+let busy=false,ws=null,timeoutId=null,prices=[],times=[],downloadPrices=[],downloadTimes=[],nextEnd="latest",batchCount=0;
 function log(s){$("log").textContent+="\n"+new Date().toLocaleTimeString()+"  "+s;$("log").scrollTop=$("log").scrollHeight;}
-function money(n){return (n>=0?"+$":"-$")+Math.abs(n).toFixed(2);}
-function finish(){if(timer){clearTimeout(timer);timer=null;}if(retryTimer){clearTimeout(retryTimer);retryTimer=null;}if(pingTimer){clearInterval(pingTimer);pingTimer=null;}if(pongTimer){clearTimeout(pongTimer);pongTimer=null;}const s=socket;socket=null;busy=false;if(s){try{s.close();}catch(e){}}$("run").disabled=false;}
-function clearResults(){["signals","trades","wins","losses","ties","winrate","profit","drawdown","streak","tickCount","batches"].forEach(id=>$(id).textContent="--");$("verdict").textContent="NOT RUN";$("range").textContent="Historical time range: --";$("note").textContent="A pass requires 1,000 simulated trades, at least 58% win rate, and positive estimated P/L. Passing is not a guarantee of future profitability.";}
-function analyzeAt(p,i){
- const recent=[];for(let j=i-7;j<=i;j++)recent.push(p[j]-p[j-1]);
- const base=[];for(let j=i-27;j<=i-8;j++)base.push(Math.abs(p[j]-p[j-1]));
- const up=recent.filter(x=>x>0).length,down=recent.filter(x=>x<0).length;
- const net=recent.reduce((a,b)=>a+b,0),path=recent.reduce((a,b)=>a+Math.abs(b),0);
- const efficiency=path>0?Math.abs(net)/path:0;
- const recentVol=path/8,baseVol=base.reduce((a,b)=>a+b,0)/20;
- const ratio=baseVol>0?recentVol/baseVol:0;
- const dirMoves=Math.max(up,down),direction=net>0?"CALL":net<0?"PUT":null;
- return {ok:!!direction&&dirMoves>=6&&efficiency>=0.65&&ratio>=0.60&&ratio<=1.80,direction};
+function money(n){return (n<0?"-$":"+$")+Math.abs(n).toFixed(2);}
+function status(s){$("status").textContent=s;}
+function setProgress(n,s){$("progress").style.width=Math.max(0,Math.min(100,n))+"%";$("progressText").textContent=s;}
+function resetStats(){
+["ticks","trades","record","rate","pl","dd","streak"].forEach(k=>$(k).textContent="--");
+$("verdict").textContent="NOT RUN";$("verdict").className="stat";$("range").textContent="Data range: --";
+$("periods").innerHTML='<div class="period muted">Load history to calculate the three period reports.</div>';
 }
-function replay(){
- let signals=0,trades=0,wins=0,losses=0,ties=0,profit=0,peak=0,maxDD=0,streak=0,longest=0,stop=false;
- let i=28;
- while(i+EXPIRY<prices.length&&trades<TARGET){
-  const a=analyzeAt(prices,i);
-  if(!a.ok){i++;continue;}
-  signals++;trades++;
-  const exit=prices[i+EXPIRY],entry=prices[i];
-  if((a.direction==="CALL"&&exit>entry)||(a.direction==="PUT"&&exit<entry)){
-   wins++;profit=Number((profit+WIN).toFixed(4));streak=0;
-  }else if(exit===entry){ties++;streak=0;}
-  else{losses++;profit=Number((profit+LOSS).toFixed(4));streak++;longest=Math.max(longest,streak);}
-  peak=Math.max(peak,profit);maxDD=Math.max(maxDD,peak-profit);
-  i+=EXPIRY+1;
- }
- const decisive=wins+losses,rate=decisive?wins/decisive*100:0;
- const enough=trades>=TARGET,passed=enough&&rate>=58&&profit>0;
- $("signals").textContent=String(signals);$("trades").textContent=String(trades);
- $("wins").textContent=String(wins);$("losses").textContent=String(losses);$("ties").textContent=String(ties);
- $("winrate").textContent=decisive?rate.toFixed(1)+"%":"N/A";
- $("profit").textContent=money(profit);$("profit").className="stat "+(profit>=0?"green":"red");
- $("drawdown").textContent="-$"+maxDD.toFixed(2);$("streak").textContent=String(longest);
- $("tickCount").textContent=String(prices.length);$("batches").textContent=String(batchCount);
- $("verdict").textContent=passed?"PASS — DEMO RESEARCH ONLY":(!enough?"INCOMPLETE — NOT CLEARED":"FAIL — FIX STRATEGY FIRST");
- $("verdict").className="stat "+(passed?"green":"red");
- if(times.length){$("range").textContent="Historical range: "+new Date(times[0]*1000).toLocaleString()+" — "+new Date(times[times.length-1]*1000).toLocaleString();}
- if(!enough)$("note").textContent="Only "+trades+" of "+TARGET+" target trades were available in the downloaded history. This run is incomplete; do not treat its win rate as a pass.";
- else if(rate<58)$("note").textContent="Win rate "+rate.toFixed(1)+"% is below the 58% minimum. TEST 203 is NOT cleared for live DEMO testing. Strategy needs review.";
- else if(profit<=0)$("note").textContent="Win rate met the threshold, but estimated P/L is not positive. TEST 203 is NOT cleared for live DEMO testing.";
- else $("note").textContent="Thresholds met under the stated payout assumptions. This only supports a cautious further DEMO test; it does not prove an edge or justify real-money trading.";
- log("Replay finished · "+trades+" trades · "+wins+" wins / "+losses+" losses / "+ties+" ties · "+rate.toFixed(1)+"% win rate · estimated P/L "+money(profit)+" · max drawdown -$"+maxDD.toFixed(2)+" · longest losing streak "+longest+".");
+function stopFetch(){
+if(timeoutId){clearTimeout(timeoutId);timeoutId=null;}
+const s=ws;ws=null;busy=false;if(s){s.onopen=s.onmessage=s.onerror=s.onclose=null;try{s.close();}catch(e){}}
+$("fetch").disabled=false;$("upload").disabled=false;
 }
-function requestBatch(end){
- requestEnd=end;
- if(!socket||socket.readyState!==1){log("History request queued while socket reconnects · "+activeSocketUrl);return;}
- try{socket.send(JSON.stringify({ticks_history:SYMBOL,count:BATCH,end:end,style:"ticks"}));}
- catch(e){log("Send failed · "+e.name+": "+e.message);}
+function failFetch(message){
+log(message);status("Fetch stopped. Your file-upload fallback is ready.");stopFetch();
 }
-function retryConnection(closeInfo){
- if(!busy)return;
- if(attemptNo<MAX_CONNECT_ATTEMPTS){
-  const wait=1000*attemptNo;
-  log("Retrying official Deriv endpoint in "+wait+" ms · attempt "+(attemptNo+1)+"/"+MAX_CONNECT_ATTEMPTS+".");
-  retryTimer=setTimeout(function(){retryTimer=null;connectSocket();},wait);
-  return;
- }
- $("status").textContent="Official Deriv WebSocket did not complete the public-data handshake. See diagnostic log.";
- log("All "+MAX_CONNECT_ATTEMPTS+" attempts to "+WS_HOST+" failed. Last close code="+closeInfo.code+" · reason="+(closeInfo.reason||"(empty)")+". No fallback host used, no PAT requested, no trades placed.");
- finish();
+function parseCSV(raw){
+const lines=raw.replace(/^\uFEFF/,"").trim().split(/\r?\n/).filter(Boolean);
+if(lines.length<2)throw Error("CSV needs a header and at least one data row.");
+const split=line=>{const out=[];let cur="",q=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(q&&line[i+1]==='"'){cur+='"';i++;}else q=!q;}else if(c===","&&!q){out.push(cur.trim());cur="";}else cur+=c;}out.push(cur.trim());return out;};
+const h=split(lines[0]).map(x=>x.toLowerCase().replace(/^"|"$/g,""));
+const ti=h.indexOf("timestamp"),pi=h.indexOf("price");
+if(ti<0||pi<0)throw Error('CSV headers must include "timestamp" and "price".');
+const rows=[];
+for(let i=1;i<lines.length;i++){const c=split(lines[i]);const t=Number(c[ti]),p=Number(c[pi]);if(!Number.isFinite(t)||!Number.isFinite(p))continue;rows.push({t,p});}
+if(!rows.length)throw Error("No valid timestamp/price rows found.");
+return rows;
 }
-function connectSocket(){
- if(!busy)return;
- attemptNo++;
- const url="wss://"+WS_HOST+"/websockets/v3?app_id="+encodeURIComponent(appId);
- activeSocketUrl=url;
- log("Connecting · "+url+" · attempt "+attemptNo+"/"+MAX_CONNECT_ATTEMPTS+" · browser online="+(navigator.onLine?"yes":"no"));
- try{
-  const s=new WebSocket(url);socket=s;const started=Date.now();
-  s.onopen=function(){
-   if(socket!==s||!busy)return;
-   log("WebSocket OPEN · official host="+WS_HOST+" · readyState="+s.readyState+". Sending public ping before history request.");
-   try{s.send(JSON.stringify({ping:1,req_id:9001}));}
-   catch(e){log("Ping send failed · "+e.name+": "+e.message);try{s.close();}catch(_){}}
-   if(pongTimer)clearTimeout(pongTimer);
-   pongTimer=setTimeout(function(){if(socket===s&&busy&&!historyStarted){log("PING TIMEOUT · no pong received within 8 seconds.");try{s.close(4000,"ping timeout");}catch(_){}}},8000);
-  };
-  s.onmessage=function(ev){
-   if(socket!==s||!busy)return;let d;try{d=JSON.parse(ev.data);}catch(e){log("Ignored invalid JSON response.");return;}
-   if(d.error){$("status").textContent="Deriv API error: "+d.error.message;log("API error "+(d.error.code||"")+": "+d.error.message);finish();return;}
-   const isPong=d.msg_type==="ping"||(d.echo_req&&d.echo_req.ping===1);
-   if(isPong){
-    if(pongTimer){clearTimeout(pongTimer);pongTimer=null;}
-    log("PING RESPONSE received · official endpoint is responding.");
-    if(!historyStarted){
-     historyStarted=true;
-     pingTimer=setInterval(function(){if(socket===s&&busy&&s.readyState===1){try{s.send(JSON.stringify({ping:1,req_id:9002}));}catch(e){log("Keepalive ping send failed · "+e.message);}}},PING_INTERVAL);
-     $("status").textContent="Connection verified. Requesting historical R_10 ticks…";
-     requestBatch(requestEnd);
-    }
-    return;
-   }
-   if(d.msg_type!=="history"||!d.history)return;
-   const pp=(d.history.prices||[]).map(Number),tt=(d.history.times||[]).map(Number);
-   if(!pp.length||pp.length!==tt.length||pp.some(x=>!Number.isFinite(x))){$("status").textContent="Invalid or empty history batch.";log("Invalid batch received; stopping.");finish();return;}
-   const newCount=pp.length;
-   if(batchCount===0){prices=pp.slice();times=tt.slice();}else{prices=pp.concat(prices);times=tt.concat(times);}
-   batchCount++;log("History batch "+batchCount+"/"+MAX_BATCHES+" · "+newCount+" older ticks added · "+prices.length+" total.");
-   const oldest=tt[0];
-   if(batchCount<MAX_BATCHES&&pp.length===BATCH&&Number.isFinite(oldest)&&oldest>0&&oldest!==lastOldest&&prices.length<100000){
-    lastOldest=oldest;$("status").textContent="Downloaded "+prices.length+" ticks. Fetching older history (batch "+(batchCount+1)+"/"+MAX_BATCHES+")…";requestBatch(oldest-1);
-   }else{
-    $("status").textContent="Downloaded "+prices.length+" ticks. Running TEST 203 replay locally…";
-    log("Historical download complete. Running TEST 203 replay locally.");
-    replay();$("status").textContent="Backtest finished. No live or demo contracts were placed.";finish();
-   }
-  };
-  s.onerror=function(ev){if(socket!==s||!busy)return;$("status").textContent="Official Deriv WebSocket error · checking close details…";log("WebSocket ERROR event · endpoint="+WS_HOST+" · readyState="+s.readyState+" · browser online="+(navigator.onLine?"yes":"no")+" · eventType="+(ev&&ev.type||"error")+". Browser does not expose the underlying network/server cause.");};
-  s.onclose=function(e){
-   if(socket!==s||!busy)return;socket=null;
-   if(pongTimer){clearTimeout(pongTimer);pongTimer=null;}if(pingTimer){clearInterval(pingTimer);pingTimer=null;}
-   const info={code:e.code,reason:e.reason||""};
-   log("Socket CLOSED · endpoint="+WS_HOST+" · code="+e.code+" · reason="+(e.reason||"(empty)")+" · clean="+e.wasClean+" · open duration="+((Date.now()-started)/1000).toFixed(1)+"s · ping received="+(historyStarted?"yes":"no")+" · batch="+batchCount+" · ticks="+prices.length+".");
-   retryConnection(info);
-  };
- }catch(e){log("WebSocket constructor failed · endpoint="+WS_HOST+" · "+e.name+": "+e.message);retryConnection({code:"constructor",reason:e.message});}
+function parseJSON(raw){
+const d=JSON.parse(raw);let ts,ps,rows;
+if(d&&d.history&&Array.isArray(d.history.times)&&Array.isArray(d.history.prices)){ts=d.history.times;ps=d.history.prices;}
+else if(d&&Array.isArray(d.times)&&Array.isArray(d.prices)){ts=d.times;ps=d.prices;}
+if(ts&&ps){if(ts.length!==ps.length)throw Error("JSON times and prices have different lengths.");rows=ps.map((p,i)=>({t:Number(ts[i]),p:Number(p)}));}
+else if(Array.isArray(d)){rows=d.map(x=>({t:Number(x.timestamp??x.time),p:Number(x.price)}));}
+else throw Error("Unsupported JSON. Need Deriv history.times/prices or timestamp/price records.");
+rows=rows.filter(x=>Number.isFinite(x.t)&&Number.isFinite(x.p));
+if(!rows.length)throw Error("No valid timestamp/price values found in JSON.");
+return rows;
 }
-function requestBatch(end){
- requestEnd=end;
- if(!socket||socket.readyState!==1){log("History request queued while socket reconnects · "+activeSocketUrl);return;}
- try{socket.send(JSON.stringify({ticks_history:SYMBOL,count:BATCH,end:end,style:"ticks"}));}
- catch(e){log("Send failed · "+e.name+": "+e.message);}
+function normalizeRows(rows){
+const sorted=rows.slice().sort((a,b)=>a.t-b.t);
+const unique=[];let last=null;
+for(const r of sorted){if(r.t===last)continue;unique.push(r);last=r.t;}
+if(unique.length<40)throw Error("At least 40 valid unique ticks are required for the 203 filters.");
+return {times:unique.map(x=>x.t),prices:unique.map(x=>x.p)};
 }
-function retryOrFallback(closeInfo){
- if(!busy)return;
- if(attemptNo<MAX_CONNECT_ATTEMPTS){
-  const wait=800*attemptNo;
-  log("Retrying "+WS_HOSTS[hostIndex]+" in "+wait+" ms · attempt "+(attemptNo+1)+"/"+MAX_CONNECT_ATTEMPTS+".");
-  retryTimer=setTimeout(function(){retryTimer=null;connectSocket();},wait);
-  return;
- }
- if(hostIndex<WS_HOSTS.length-1){
-  hostIndex++;attemptNo=0;
-  log("Primary endpoint attempts exhausted. Trying fallback host "+WS_HOSTS[hostIndex]+".");
-  retryTimer=setTimeout(function(){retryTimer=null;connectSocket();},500);
-  return;
- }
- $("status").textContent="Could not connect to Deriv history. See diagnostic log; no trades were placed.";
- log("All connection attempts failed. Last close: code "+closeInfo.code+", reason "+(closeInfo.reason||"(empty)")+". Browser cannot reveal the server/network's underlying cause from WebSocket error events.");
- finish();
+function runSegment(p){
+let signals=0,trades=0,wins=0,losses=0,ties=0,pl=0,peak=0,dd=0,streak=0,longest=0;
+let i=28;
+while(i+CFG.expiry<p.length&&trades<CFG.target){
+const recent=[];for(let j=i-7;j<=i;j++)recent.push(p[j]-p[j-1]);
+const base=[];for(let j=i-27;j<=i-8;j++)base.push(Math.abs(p[j]-p[j-1]));
+const up=recent.filter(x=>x>0).length,down=recent.filter(x=>x<0).length;
+const net=recent.reduce((a,b)=>a+b,0),path=recent.reduce((a,b)=>a+Math.abs(b),0);
+const eff=path?Math.abs(net)/path:0,rv=path/8,bv=base.reduce((a,b)=>a+b,0)/20,ratio=bv?rv/bv:0;
+const dir=net>0?"CALL":net<0?"PUT":null;
+if(!dir||Math.max(up,down)<6||eff<.65||ratio<.60||ratio>1.80){i++;continue;}
+signals++;trades++;const exit=p[i+CFG.expiry];
+if((dir==="CALL"&&exit>p[i])||(dir==="PUT"&&exit<p[i])){wins++;pl=Number((pl+CFG.win).toFixed(4));streak=0;}
+else if(exit===p[i]){ties++;streak=0;}
+else{losses++;pl=Number((pl+CFG.loss).toFixed(4));streak++;longest=Math.max(longest,streak);}
+peak=Math.max(peak,pl);dd=Math.max(dd,peak-pl);i+=CFG.expiry+1;
 }
-function connectSocket(){
- if(!busy)return;
- const host=WS_HOSTS[hostIndex];attemptNo++;
- const url="wss://"+host+"/websockets/v3?app_id="+encodeURIComponent(appId);
- activeSocketUrl=url;
- log("Connecting · "+url+" · attempt "+attemptNo+"/"+MAX_CONNECT_ATTEMPTS+" · browser online="+(navigator.onLine?"yes":"no"));
- try{
-  const s=new WebSocket(url);socket=s;const started=Date.now();
-  s.onopen=function(){
-   if(socket!==s||!busy)return;
-   log("WebSocket OPEN · host="+host+" · protocol="+(s.protocol||"(none)")+" · readyState="+s.readyState+". Requesting history.");
-   requestBatch(requestEnd);
-  };
-  s.onmessage=function(ev){
-   if(socket!==s||!busy)return;let d;try{d=JSON.parse(ev.data);}catch(e){log("Ignored invalid JSON response.");return;}
-   if(d.error){$("status").textContent="Deriv history error: "+d.error.message;log("API error "+(d.error.code||"")+": "+d.error.message);finish();return;}
-   if(d.msg_type!=="history"||!d.history)return;
-   const pp=(d.history.prices||[]).map(Number),tt=(d.history.times||[]).map(Number);
-   if(!pp.length||pp.length!==tt.length||pp.some(x=>!Number.isFinite(x))){$("status").textContent="Invalid or empty history batch.";log("Invalid batch received; stopping.");finish();return;}
-   const newCount=pp.length;
-   if(batchCount===0){prices=pp.slice();times=tt.slice();}
-   else{prices=pp.concat(prices);times=tt.concat(times);}
-   batchCount++;log("History batch "+batchCount+"/"+MAX_BATCHES+" · "+newCount+" older ticks added · "+prices.length+" total.");
-   const oldest=tt[0];
-   if(batchCount<MAX_BATCHES&&pp.length===BATCH&&Number.isFinite(oldest)&&oldest>0&&oldest!==lastOldest&&prices.length<100000){
-    lastOldest=oldest;$("status").textContent="Downloaded "+prices.length+" ticks. Fetching older history (batch "+(batchCount+1)+"/"+MAX_BATCHES+")…";
-    requestBatch(oldest-1);
-   }else{
-    $("status").textContent="Downloaded "+prices.length+" ticks. Running TEST 203 replay locally…";
-    log("Historical download complete. Running identical TEST 203 entry filters and 5-tick settlement simulation.");
-    replay();$("status").textContent="Backtest finished. No live or demo contracts were placed.";finish();
-   }
-  };
-  s.onerror=function(ev){
-   if(socket!==s||!busy)return;
-   $("status").textContent="WebSocket error · reconnecting if possible.";
-   log("WebSocket ERROR event · host="+host+" · readyState="+s.readyState+" · online="+(navigator.onLine?"yes":"no")+" · eventType="+(ev&&ev.type||"error")+". Browser security APIs do not expose a more specific network/server error.");
-  };
-  s.onclose=function(e){
-   if(socket!==s||!busy)return;
-   socket=null;
-   const info={code:e.code,reason:e.reason||""};
-   log("Socket CLOSED · host="+host+" · code="+e.code+" · reason="+(e.reason||"(empty)")+" · clean="+e.wasClean+" · open duration="+((Date.now()-started)/1000).toFixed(1)+"s · batch="+batchCount+" · ticks="+prices.length+".");
-   retryOrFallback(info);
-  };
- }catch(e){
-  log("WebSocket constructor failed · host="+host+" · "+e.name+": "+e.message);
-  retryOrFallback({code:"constructor",reason:e.message});
- }
+const decisive=wins+losses,rate=decisive?wins/decisive*100:0;
+return {signals,trades,wins,losses,ties,rate,pl,dd,longest,passed:trades>=CFG.target&&rate>=CFG.threshold&&pl>0};
 }
-$("run").addEventListener("click",function(){
- if(busy)return;
- appId=$("appid").value.trim();
- if(!/^\d+$/.test(appId)){alert("Enter the numeric Deriv App ID only. Do not enter your PAT.");return;}
- clearResults();prices=[];times=[];batchCount=0;lastOldest=null;requestEnd="latest";attemptNo=0;historyStarted=false;busy=true;socket=null;
- $("run").disabled=true;$("status").textContent="Connecting to public historical market data…";
- log("Starting public history download: up to "+(BATCH*MAX_BATCHES).toLocaleString()+" R_10 ticks. No PAT, no authorize request, no account access, no trades. First step is a ping handshake.");
- timer=setTimeout(function(){if(busy){$("status").textContent="History download timed out. See diagnostic log.";log("120-second overall timeout · endpoint="+WS_HOST+" · attempts="+attemptNo+" · batches="+batchCount+" · ticks="+prices.length);finish();}},120000);
- connectSocket();
+function periodCard(name,p,t){
+const r=runSegment(p),verdict=r.passed?"MEETS RESEARCH THRESHOLDS":"NOT CLEARED";
+return '<div class="period"><b>'+name+'</b><p class="small">'+p.length.toLocaleString()+' ticks · '+(t.length?new Date(t[0]*1000).toLocaleString():"time unavailable")+' to '+(t.length?new Date(t[t.length-1]*1000).toLocaleString():"time unavailable")+'</p><div class="grid"><div><label>Trades</label><div class="stat">'+r.trades+'</div></div><div><label>Win rate</label><div class="stat">'+(r.trades?r.rate.toFixed(1)+"%":"N/A")+'</div></div><div><label>Wins / losses / ties</label><div class="stat">'+r.wins+' / '+r.losses+' / '+r.ties+'</div></div><div><label>Estimated P/L</label><div class="stat '+(r.pl>=0?"green":"red")+'">'+money(r.pl)+'</div></div><div><label>Max drawdown</label><div class="stat">-$'+r.dd.toFixed(2)+'</div></div><div><label>Longest losing streak</label><div class="stat">'+r.longest+'</div></div></div><p class="small">'+verdict+' · 1,000 trades, 58% wins and positive P/L required</p></div>';
+}
+function analyze(){
+const p=prices,t=times,n=p.length;
+const r=runSegment(p);
+$("ticks").textContent=n.toLocaleString();$("trades").textContent=r.trades+" / "+r.signals;
+$("record").textContent=r.wins+" / "+r.losses+" / "+r.ties;
+$("rate").textContent=r.trades?r.rate.toFixed(1)+"%":"N/A";
+$("pl").textContent=money(r.pl);$("pl").className="stat "+(r.pl>=0?"green":"red");
+$("dd").textContent="-$"+r.dd.toFixed(2);$("streak").textContent=r.longest;
+$("verdict").textContent=r.passed?"PASS — RESEARCH ONLY":"NOT CLEARED";
+$("verdict").className="stat "+(r.passed?"green":"red");
+$("range").textContent="Data range: "+new Date(t[0]*1000).toLocaleString()+" — "+new Date(t[n-1]*1000).toLocaleString();
+if(n>=30000){
+const first=0,middle=Math.floor((n-10000)/2),last=n-10000;
+$("periods").innerHTML=periodCard("FIRST 10,000 TICKS",p.slice(first,first+10000),t.slice(first,first+10000))+periodCard("MIDDLE 10,000 TICKS",p.slice(middle,middle+10000),t.slice(middle,middle+10000))+periodCard("LAST 10,000 TICKS",p.slice(last,last+10000),t.slice(last,last+10000));
+}else{
+const third=Math.floor(n/3),two=Math.floor(2*n/3);
+$("periods").innerHTML=periodCard("FIRST THIRD",p.slice(0,third),t.slice(0,third))+periodCard("MIDDLE THIRD",p.slice(third,two),t.slice(third,two))+periodCard("LAST THIRD",p.slice(two),t.slice(two));
+log("Fewer than 30,000 ticks: period reports use thirds instead of 10,000-tick windows.");
+}
+log("Backtest complete: "+n+" ticks, "+r.trades+" trades, "+r.rate.toFixed(1)+"% decisive win rate, estimated P/L "+money(r.pl)+".");
+status("Backtest finished locally. No demo or real contracts were placed.");
+}
+function loadRows(rows,source){
+const clean=normalizeRows(rows);times=clean.times;prices=clean.prices;
+log("Loaded "+prices.length+" valid unique chronological R_10 ticks from "+source+".");
+setProgress(100,"Loaded "+prices.length.toLocaleString()+" ticks.");analyze();
+}
+$("upload").addEventListener("click",async()=>{
+if(busy)return;const f=$("file").files[0];if(!f){status("Choose a CSV or JSON file first.");return;}
+try{$("upload").disabled=true;status("Reading local file…");const raw=await f.text();const rows=/\.json$/i.test(f.name)||raw.trim().startsWith("{")||raw.trim().startsWith("[")?parseJSON(raw):parseCSV(raw);loadRows(rows,f.name);}
+catch(e){status("File import error: "+e.message);log("File import failed: "+e.message);}finally{$("upload").disabled=false;}
 });
-$("clear").addEventListener("click",function(){if(busy){alert("Wait for the current download to finish.");return;}clearResults();$("status").textContent="Results cleared. TEST 201B and TEST 203 live data are untouched."; $("log").textContent="Backtest results cleared. No saved live-test data was changed.";});
+function fetchBatch(end){
+if(!ws||ws.readyState!==1)throw Error("WebSocket is not open.");
+ws.send(JSON.stringify({ticks_history:CFG.symbol,count:CFG.batch,end:end,style:"ticks"}));
+if(timeoutId)clearTimeout(timeoutId);
+timeoutId=setTimeout(()=>failFetch("30-second timeout waiting for the next Deriv history response. Batch "+batchCount+"; "+downloadPrices.length+" ticks received."),CFG.timeout);
+}
+$("fetch").addEventListener("click",()=>{
+if(busy)return;resetStats();downloadPrices=[];downloadTimes=[];batchCount=0;nextEnd="latest";busy=true;
+$("fetch").disabled=true;$("upload").disabled=true;status("Connecting to Deriv public history…");setProgress(0,"Connecting · 0 / 50,000 ticks.");
+const url="wss://ws.derivws.com/websockets/v3?app_id="+CFG.appId;
+log("Opening "+url+" · public ticks_history only · no PAT, no authorize, no trades.");
+try{
+ws=new WebSocket(url);
+timeoutId=setTimeout(()=>failFetch("30-second connection timeout. Use CSV/JSON upload fallback."),CFG.timeout);
+ws.onopen=()=>{log("WebSocket connected. Requesting R_10 history.");try{fetchBatch(nextEnd);}catch(e){failFetch("Could not request history: "+e.message);}};
+ws.onmessage=ev=>{
+if(!busy)return;let d;try{d=JSON.parse(ev.data);}catch(e){failFetch("Deriv returned invalid JSON.");return;}
+if(d.error){failFetch("Deriv API error "+(d.error.code||"")+": "+d.error.message);return;}
+if(d.msg_type!=="history"||!d.history)return;
+const ps=(d.history.prices||[]).map(Number),ts=(d.history.times||[]).map(Number);
+if(!ps.length||ps.length!==ts.length||ps.some(x=>!Number.isFinite(x))||ts.some(x=>!Number.isFinite(x))){failFetch("Invalid or empty history batch.");return;}
+downloadPrices=ps.concat(downloadPrices);downloadTimes=ts.concat(downloadTimes);batchCount++;
+setProgress(downloadPrices.length/CFG.maxTicks*100,"Received "+downloadPrices.length.toLocaleString()+" / 50,000 ticks · batch "+batchCount+"/10.");
+log("Batch "+batchCount+": "+ps.length+" ticks · total "+downloadPrices.length+".");
+const oldest=ts[0];
+if(downloadPrices.length<CFG.maxTicks&&ps.length===CFG.batch&&oldest>0&&batchCount<10){nextEnd=oldest-1;try{fetchBatch(nextEnd);}catch(e){failFetch("Next history batch failed: "+e.message);}return;}
+stopFetch();try{loadRows(downloadPrices.map((p,i)=>({t:downloadTimes[i],p})),"Deriv public API");}catch(e){status("History validation failed: "+e.message);log(e.message);}
+};
+ws.onerror=()=>{if(busy)failFetch("WebSocket error from Deriv. Upload CSV/JSON instead; no indefinite waiting.");};
+ws.onclose=e=>{if(busy)failFetch("Deriv socket closed (code "+e.code+"). Upload CSV/JSON instead.");};
+}catch(e){failFetch("Could not open Deriv WebSocket: "+e.message);}
+});
+$("clear").addEventListener("click",()=>{
+if(busy){status("Wait for the current fetch to stop before clearing.");return;}
+prices=[];times=[];downloadPrices=[];downloadTimes=[];resetStats();$("log").textContent="Results cleared. No other bot page, TEST 201B or live TEST 203 was changed.";status("Ready. Upload a file or fetch public R_10 history.");setProgress(0,"No download running.");
+});
 })();
-</script></body></html>
+</script>
+</body></html>
