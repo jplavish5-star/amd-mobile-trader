@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="theme-color" content="#10141c">
+<title>Deriv Volatility 10 Strategy Bot · TEST 203</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,Arial,sans-serif;background:#10141c;color:#f4f6fb}
+*{box-sizing:border-box}body{margin:0;padding:14px;max-width:760px;margin:auto}
+.card{background:#1b222d;border:1px solid #303b4b;border-radius:16px;padding:16px;margin:12px 0}
+h1{font-size:23px;margin:8px 0}h2{font-size:17px;margin:0 0 12px}
+p,.muted{color:#b8c3d2;font-size:14px;line-height:1.5}
+label{display:block;font-size:13px;color:#cbd5e1;margin:10px 0 5px}
+input{width:100%;padding:13px;border-radius:10px;border:1px solid #455165;background:#10151d;color:#fff;font-size:16px}
+button{padding:14px;border:0;border-radius:11px;font-weight:750;font-size:15px;cursor:pointer}
+button:disabled{opacity:.4}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.connect{background:#1677ff;color:white}.stop{background:#e83155;color:white}.secondary{background:#344154;color:white}
+.stat{font-size:21px;font-weight:750;overflow-wrap:anywhere}.pill{display:inline-block;padding:5px 9px;border-radius:20px;background:#313e50;font-size:12px}
+.signal{border-radius:14px;padding:18px;text-align:center;background:#303b4b;color:#fff;min-height:112px;display:flex;flex-direction:column;justify-content:center;gap:5px}
+.signal.buy{background:#1677ff;color:#fff}.signal.sell{background:#f5f7fb;color:#111827}
+.signal .direction{font-size:27px;font-weight:850;letter-spacing:.5px}.signal .detail{font-size:13px;font-weight:650}
+.blue{color:#65a5ff}.white{color:#fff}.green{color:#37df9d}.red{color:#ff7187}
+#log{height:190px;overflow:auto;background:#070a0f;color:#b9d6ff;border-radius:10px;padding:12px;font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap}
+.warning{border-left:4px solid #e5a63a;padding-left:10px}.small{font-size:12px}
+</style>
+</head>
+<body>
+<div class="card">
+<span class="pill">DERIV · DEMO FIRST · V2</span>
+<h1>Volatility 10 Rise / Fall Bot · V2</h1>
+<p>TEST 203 experimental strategy: 8-tick directional confirmation, minimum 6 of 8 moves in the same direction, efficiency ratio ≥0.65, and a volatility filter that rejects unusually quiet or unusually fast conditions. Contract duration: 5 ticks.</p>
+<p class="warning">VIRTUAL $10 DEMO MODE: Deriv account balance is shown separately and does not control virtual risk. Virtual balance starts at $10.00; fixed $0.35 stake; stop at $9.30 or target $11.00. Dynamic profit lock remains active. Demo only; virtual results do not change your Deriv balance or guarantee live results.</p>
+</div>
+
+<div class="card">
+<h2>Trade signal</h2>
+<div id="signalBox" class="signal">
+<div class="direction" id="signalDirection">WAITING</div>
+<div class="detail" id="signalDetail">Collecting 29 ticks for trend and volatility checks</div>
+</div>
+<p id="trendText">Trend / volatility: collecting baseline ticks</p>
+</div>
+
+<div class="card">
+<h2>Deriv DEMO connection</h2>
+<label>Deriv DEMO Personal Access Token (PAT)</label>
+<input id="token" type="password" autocomplete="off" placeholder="Paste your DEMO PAT">
+<label>Deriv App ID</label>
+<input id="appid" inputmode="text" autocomplete="off" placeholder="Paste your Deriv application App ID">
+<div class="row" style="margin-top:12px">
+<button class="connect" id="connect">CONNECT DEMO</button>
+<button class="secondary" id="disconnect" disabled>DISCONNECT</button>
+</div>
+<p id="conn">Disconnected</p>
+</div>
+
+<div class="card">
+<h2>Automatic trading</h2>
+<div class="row">
+<div><label>Base stake</label><div class="stat">$0.35</div></div>
+<div><label>Current stake</label><div class="stat" id="stake">$0.35</div></div>
+<div><label>Martingale step</label><div class="stat" id="step">0 / 1</div></div>
+<div><label>Contract duration</label><div class="stat">5 ticks</div></div>
+</div>
+<div class="row" style="margin-top:12px">
+<button class="connect" id="start" disabled>START AUTO</button>
+<button class="stop" id="stop" disabled>STOP AUTO</button>
+</div>
+<p id="payoutStatus">Payout filter: waiting for a live Deriv quote · minimum profit $0.27 · break-even ≤57%</p>
+<p id="state">AUTO OFF</p>
+</div>
+
+<div class="card">
+<h2>Virtual $10 account</h2>
+<div style="margin:0 0 12px;background:#101923;border:1px solid #1677ff;border-radius:12px;padding:14px">
+<label>VIRTUAL $10 BALANCE</label><div class="stat green" id="virtualBalance" style="font-size:32px">$10.00</div>
+<p class="small">Start $10.00 · stop-loss floor $9.30 · take-profit target $11.00</p></div>
+<div class="row"><button class="secondary" id="resetVirtual">RESET VIRTUAL TO $10</button><div><label>Deriv balance (reference only)</label><div class="stat" id="balance">--</div></div></div>
+<div class="row">
+<div><label>Deriv starting balance</label><div class="stat" id="initialBalance">--</div></div>
+
+<div><label>Session profit / loss</label><div class="stat" id="pl">$0.00</div></div>
+<div><label>Wins / losses</label><div class="stat" id="wl">0 / 0</div></div>
+</div>
+<p>Virtual risk: fixed $0.35 stake · stop at $9.30 (−$0.70) · take profit at $11.00 (+$1.00) · no martingale.</p>
+<p>Dynamic Profit Lock: activates at +$0.50 cycle profit and protects 50% of the highest cycle profit reached.</p>
+<div class="row"><div><label>Peak session profit</label><div class="stat green" id="peakProfit">$0.00</div></div><div><label>Protected profit floor</label><div class="stat" id="protectedProfit">OFF</div></div></div>
+<p id="openTrade">Open contract: none</p>
+</div>
+
+<div class="card">
+<h2>TEST 203 · DEMO ONLY</h2>
+<p class="warning">Separate TEST 203 research mode · R_10 · Rise/Fall · fixed $0.35 · minimum 75% net return on stake · 5-tick contracts · Dynamic Profit Lock ON. Uses stronger trend confirmation and a relative volatility filter. Each cycle starts at $10 and ends at $11 (win) or $9.30 (loss). Test stops at 200 settled trades or cumulative profit of -$5.00.</p><p class="warning">DEMO ONLY. Do not run TEST 203 at the same time as TEST 201B or any other bot on this Deriv DEMO account. The 201B results remain separate and untouched.</p>
+<div class="row">
+<button class="connect" id="testStart">TEST 203 TRADES (DEMO ONLY)</button>
+<button class="stop" id="testPause" disabled>PAUSE TEST</button>
+</div>
+<div class="row" style="margin-top:10px">
+<div><label>Elapsed time</label><div class="stat" id="testElapsed">00:00:00</div></div>
+<div><label>Progress</label><div class="stat" id="testProgress">0 / 200</div></div>
+<div><label>True win rate</label><div class="stat" id="testWinRate">0.0%</div></div>
+<div><label>Total settled profit</label><div class="stat" id="testProfit">$0.00</div></div>
+<div><label>Wins / losses</label><div class="stat" id="testWL">0 / 0</div></div>
+<div><label>Cycles won / lost</label><div class="stat" id="testCycles">0 / 0</div></div>
+<div><label>Current cycle</label><div class="stat" id="testCycle">1 / 20</div></div>
+<div><label>Worst drawdown</label><div class="stat" id="testDrawdown">$0.00</div></div>
+<div><label>Current / max losing streak</label><div class="stat" id="testLosingStreak">0 / 0</div></div>
+<div><label>Test status</label><div class="stat" id="testStatus">NOT STARTED</div></div>
+</div>
+<p class="small" id="testNote">Progress is saved on this browser. After a refresh or phone disconnect, reconnect DEMO and press the test button to resume. It will not restart trading by itself.</p>
+<button class="secondary" id="testReset" style="width:100%">RESET TEST RECORD</button>
+</div>
+
+<div class="card">
+<h2>Activity log</h2>
+<div id="log">TEST 203 ready. Connect a DEMO account. Your PAT is kept in this page session and is not saved.</div>
+</div>
+
+<script>
+(function(){
+"use strict";
+const $=id=>document.getElementById(id);
+const BASE_STAKE=0.35,MAX_STEPS=0,DURATION=5,SYMBOL="R_10";
+const SIGNAL_WINDOW=8,BASELINE_WINDOW=20,MIN_DIRECTIONAL_MOVES=6,MIN_EFFICIENCY=0.65,MIN_VOL_RATIO=0.60,MAX_VOL_RATIO=1.80;
+const LOSS_COOLDOWN_MS=60000;
+const PROFIT_LOCK_ACTIVATION=0.50,PROFIT_LOCK_RATIO=0.50;
+const VIRTUAL_START=10.00,VIRTUAL_STOP=9.30,VIRTUAL_TAKE_PROFIT=11.00;
+let ws=null,authorized=false,auto=false,balance=0,startBalance=0,currency="USD";
+let currentStake=BASE_STAKE,step=0,profitToday=0,wins=0,losses=0;
+let virtualBalance=VIRTUAL_START,virtualStopTriggered=false;
+let ticks=[],pending=false,contractId=null,contractSub=null,heartbeat=null,lastSignalAt=0;
+let consecutiveLosses=0,pauseUntil=0;
+let peakProfit=0,protectedProfit=0,profitLockActive=false,profitLockTriggered=false;
+const TEST_STORAGE_KEY="r10_test203_v1";
+let testState={status:"new",tradeCount:0,wins:0,losses:0,totalProfit:0,cyclesWon:0,cyclesLost:0,cycleNumber:1,cycleBalance:VIRTUAL_START,cycleProfit:0,peakTotalProfit:0,maxDrawdown:0,worstDrawdownTrade:0,currentLosingStreak:0,maxLosingStreak:0,openContractId:null};
+let testModeActive=false;
+let testTimerInterval=null;
+
+function log(message){
+  $("log").textContent+="\n"+new Date().toLocaleTimeString()+"  "+message;
+  $("log").scrollTop=$("log").scrollHeight;
+}
+function setState(message){$("state").textContent=message;}
+function getTestElapsedMs(){
+  const saved=Math.max(0,Number(testState.elapsedMs)||0);
+  const started=Number(testState.startedAt)||0;
+  return saved+(started?Math.max(0,Date.now()-started):0);
+}
+function renderTestTimer(){
+  const total=Math.floor(getTestElapsedMs()/1000);
+  const hours=Math.floor(total/3600),minutes=Math.floor((total%3600)/60),seconds=total%60;
+  $("testElapsed").textContent=[hours,minutes,seconds].map(v=>String(v).padStart(2,"0")).join(":");
+}
+function startTestTimer(){
+  if(!Number(testState.startedAt))testState.startedAt=Date.now();
+  if(!testTimerInterval)testTimerInterval=setInterval(renderTestTimer,1000);
+  renderTestTimer();
+}
+function pauseTestTimer(){
+  if(Number(testState.startedAt)>0){
+    testState.elapsedMs=Math.max(0,Number(testState.elapsedMs)||0)+Math.max(0,Date.now()-Number(testState.startedAt));
+    testState.startedAt=null;
+  }
+  if(testTimerInterval){clearInterval(testTimerInterval);testTimerInterval=null;}
+  renderTestTimer();
+}
+function saveTestState(){
+  try{localStorage.setItem(TEST_STORAGE_KEY,JSON.stringify(testState));}catch(e){log("TEST progress could not be saved in this browser.");}
+}
+function loadTestState(){
+  try{
+    const raw=localStorage.getItem(TEST_STORAGE_KEY);
+    if(!raw)return;
+    const saved=JSON.parse(raw);
+    if(saved&&saved.version===1){
+      testState=Object.assign(testState,saved);
+      if(typeof testState.firstCycleCheck!=="boolean"&&testState.tradeCount===0)testState.firstCycleCheck=true;
+      if(!Number.isFinite(Number(testState.elapsedMs)))testState.elapsedMs=0;
+      // Recover the older build's saved DPL stop as a completed cycle, without losing prior trades.
+      if(testState.status==="stopped"&&testState.cycleProfitLockActive&&testState.openContractId===null&&testState.tradeCount<200&&testState.totalProfit>-5){
+        if(Number(testState.cycleProfit)>0)testState.cyclesWon++;else testState.cyclesLost++;
+        log("Recovered saved Dynamic Profit Lock cycle as "+(Number(testState.cycleProfit)>0?"WIN":"LOSS")+" · "+(Number(testState.cycleProfit)>=0?"+$":"-$")+Math.abs(Number(testState.cycleProfit)).toFixed(2)+". Existing test totals preserved.");
+        testState.cycleNumber++;
+        testState.cycleBalance=VIRTUAL_START;testState.cycleProfit=0;testState.cyclePeakProfit=0;testState.cycleProtectedProfit=0;testState.cycleProfitLockActive=false;
+        testState.status="paused";
+        saveTestState();
+      }
+      if(testState.status==="running"){pauseTestTimer();testState.status="paused";saveTestState();}
+      else{testState.startedAt=null;}
+      testModeActive=testState.status==="paused";
+      profitToday=Number(testState.cycleProfit)||0;
+      virtualBalance=Number(testState.cycleBalance)||VIRTUAL_START;
+      peakProfit=Number(testState.cyclePeakProfit)||0;
+      protectedProfit=Number(testState.cycleProtectedProfit)||0;
+      profitLockActive=!!testState.cycleProfitLockActive;
+      if(testState.openContractId!==null)contractId=Number(testState.openContractId);
+    }
+  }catch(e){log("Saved TEST record could not be read; starting with a blank test record.");}
+}
+function renderTestStats(){
+  const n=testState.tradeCount;
+  renderTestTimer();
+  $("testProgress").textContent=n+" / 200";
+  $("testWinRate").textContent=(n?testState.wins/n*100:0).toFixed(1)+"%";
+  $("testProfit").textContent=(testState.totalProfit>=0?"+$":"-$")+Math.abs(testState.totalProfit).toFixed(2);
+  $("testProfit").className="stat "+(testState.totalProfit>=0?"green":"red");
+  $("testWL").textContent=testState.wins+" / "+testState.losses;
+  $("testCycles").textContent=testState.cyclesWon+" / "+testState.cyclesLost;
+  $("testCycle").textContent="Cycle "+testState.cycleNumber;
+  $("testDrawdown").textContent="-$"+testState.maxDrawdown.toFixed(2)+" at trade "+(testState.worstDrawdownTrade||"—");
+  $("testLosingStreak").textContent=(testState.currentLosingStreak||0)+" / "+(testState.maxLosingStreak||0);
+  $("testStatus").textContent=testState.status.toUpperCase();
+  $("testStart").textContent=(testState.status==="paused"||testState.status==="running")?"RESUME TEST":"TEST 203 TRADES (DEMO ONLY)";
+  $("testPause").disabled=testState.status!=="running";
+}
+function saveAndRenderTest(){saveTestState();renderTestStats();}
+function updateStats(){
+  $("virtualBalance").textContent="$"+virtualBalance.toFixed(2);
+  $("virtualBalance").className="stat "+(virtualBalance>=VIRTUAL_START?"green":"red");
+  $("stake").textContent="$"+currentStake.toFixed(2);
+  $("step").textContent=step+" / "+MAX_STEPS;
+  $("pl").textContent=(profitToday>=0?"+$":"-$")+Math.abs(profitToday).toFixed(2);
+  $("pl").className="stat "+(profitToday>=0?"green":"red");
+  $("wl").textContent=wins+" / "+losses;
+  $("peakProfit").textContent=(peakProfit>=0?"+$":"-$")+Math.abs(peakProfit).toFixed(2);
+  $("protectedProfit").textContent=profitLockActive?"+$"+protectedProfit.toFixed(2):"OFF";
+}
+function send(payload){
+  if(ws&&ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify(payload));
+  else throw new Error("Deriv WebSocket is not connected.");
+}
+function showSignal(direction,detail){
+  const box=$("signalBox");
+  box.className="signal "+(direction==="CALL"?"buy":direction==="PUT"?"sell":"");
+  $("signalDirection").textContent=direction==="CALL"?"BUY · RISE":direction==="PUT"?"SELL · FALL":"WAITING";
+  $("signalDetail").textContent=detail;
+}
+function stopAutomation(reason){
+  auto=false;
+  pauseTestTimer();
+  if(testState.status==="running"){testState.status="paused";saveAndRenderTest();}
+  $("start").disabled=!authorized;
+  $("stop").disabled=true;
+  setState(reason||"AUTO OFF");
+}
+function disconnect(){
+  stopAutomation("Disconnected");
+  authorized=false;
+  pending=false;
+  if(heartbeat){clearInterval(heartbeat);heartbeat=null;}
+  if(ws){const old=ws;ws=null;try{old.close();}catch(e){}}
+  $("conn").textContent="Disconnected";
+  $("connect").disabled=false;
+  $("disconnect").disabled=true;
+  $("start").disabled=true;
+  $("stop").disabled=true;
+  $("token").value="";
+  $("openTrade").textContent="Open contract: none";
+}
+async function connect(){
+  const token=$("token").value.trim(),app=$("appid").value.trim();
+  if(!token||!app){alert("Enter your DEMO PAT and Deriv App ID.");return;}
+  disconnect();
+  $("conn").textContent="Authenticating with Deriv…";
+  $("connect").disabled=true;
+  setState("Authenticating DEMO account…");
+  log("Requesting DEMO account access…");
+  try{
+    const headers={"Authorization":"Bearer "+token,"Deriv-App-ID":app,"Content-Type":"application/json"};
+    const accountResponse=await fetch("https://api.derivws.com/trading/v1/options/accounts",{method:"GET",headers:headers});
+    const accountBody=await accountResponse.json();
+    if(!accountResponse.ok)throw new Error((accountBody.errors&&accountBody.errors[0]&&accountBody.errors[0].message)||accountBody.message||("Account request HTTP "+accountResponse.status));
+    function findDemo(node){
+      if(Array.isArray(node)){for(const item of node){const found=findDemo(item);if(found)return found;}}
+      else if(node&&typeof node==="object"){
+        const id=node.account_id||node.accountId||node.id;
+        const type=String(node.account_type||node.accountType||node.type||"").toLowerCase();
+        if(id&&(type.indexOf("demo")>=0||node.is_demo===true))return {id:String(id),currency:node.currency||"USD",loginid:node.loginid||node.login_id||id};
+        for(const value of Object.values(node)){if(value&&typeof value==="object"){const found=findDemo(value);if(found)return found;}}
+      }
+      return null;
+    }
+    const account=findDemo(accountBody.data||accountBody);
+    if(!account)throw new Error("No DEMO Options account found. Check that your PAT has Trade permission.");
+    currency=account.currency||"USD";
+    log("DEMO account found. Requesting secure connection…");
+    const otpResponse=await fetch("https://api.derivws.com/trading/v1/options/accounts/"+encodeURIComponent(account.id)+"/otp",{method:"POST",headers:headers});
+    const otpBody=await otpResponse.json();
+    if(!otpResponse.ok||!otpBody.data||!otpBody.data.url)throw new Error((otpBody.errors&&otpBody.errors[0]&&otpBody.errors[0].message)||otpBody.message||("OTP request HTTP "+otpResponse.status));
+    const socket=new WebSocket(otpBody.data.url);
+    ws=socket;
+    socket.onopen=function(){
+      if(ws!==socket)return;
+      authorized=true;
+      $("conn").textContent="Connected · "+account.loginid+" · DEMO";
+      if(contractId!==null){
+        try{send({proposal_open_contract:1,contract_id:contractId,subscribe:1});log("Re-subscribed to the saved open TEST contract #"+contractId+".");}
+        catch(e){log("Could not restore the open contract subscription: "+e.message);}
+      }
+      $("connect").disabled=true;$("disconnect").disabled=false;$("start").disabled=false;
+      setState("Connected · loading balance and Volatility 10 ticks");
+      log("Secure DEMO connection established.");
+      send({balance:1,subscribe:1});
+      send({ticks:SYMBOL,subscribe:1});
+      heartbeat=setInterval(function(){if(ws===socket&&socket.readyState===WebSocket.OPEN)send({ping:1});},25000);
+    };
+    socket.onmessage=function(event){
+      if(ws!==socket)return;
+      let data;try{data=JSON.parse(event.data);}catch(e){return;}
+      if(data.error){
+        log("Deriv error: "+data.error.message);
+        if(data.msg_type==="proposal"||pending)pending=false;
+        if(data.msg_type==="buy")pending=false;
+        setState("API error · "+data.error.message);
+        return;
+      }
+      if(data.msg_type==="balance"&&data.balance){
+        balance=Number(data.balance.balance);currency=data.balance.currency||currency;
+        $("balance").textContent=balance.toFixed(2)+" "+currency;
+        if(!startBalance){startBalance=balance;$("initialBalance").textContent=startBalance.toFixed(2)+" "+currency;}
+      }
+      if(data.msg_type==="tick"&&data.tick){
+        const quote=Number(data.tick.quote);
+        if(!Number.isFinite(quote))return;
+        ticks.push(quote);if(ticks.length>40)ticks.shift();
+        $("trendText").textContent="Latest ticks: "+ticks.map(v=>v.toFixed(3)).join(" → ");
+        evaluateTicks();
+      }
+      if(data.msg_type==="proposal"&&data.proposal&&pending){
+        const quotedPayout=Number(data.proposal.payout);
+        const quotedAsk=Number(data.proposal.ask_price);
+        const quotedProfit=quotedPayout-quotedAsk;
+        const breakEven=quotedPayout>0?(quotedAsk/quotedPayout)*100:Infinity;
+        if(!Number.isFinite(quotedPayout)||!Number.isFinite(quotedAsk)||quotedPayout<=0||quotedAsk<=0){
+          pending=false;
+          $("payoutStatus").textContent="Payout filter: quote missing/invalid · trade skipped";
+          log("SKIPPED - Deriv proposal did not provide a valid payout and ask price.");
+          setState("TRADE SKIPPED · invalid payout quote");
+        }else{
+          $("payoutStatus").textContent="Live quote · payout $"+quotedPayout.toFixed(2)+" · profit $"+quotedProfit.toFixed(2)+" · break-even "+breakEven.toFixed(1)+"%";
+          const payoutFilterFailed=testModeActive?quotedProfit<(quotedAsk*0.75):(quotedProfit<0.27||breakEven>57);
+          if(payoutFilterFailed){
+            pending=false;
+            log(testModeActive?"SKIPPED - 201B requires net return ≥75% of stake (quoted profit ≥$"+(quotedAsk*0.75).toFixed(2)+"). Actual quoted profit $"+quotedProfit.toFixed(2)+".":"SKIPPED - Payout $"+quotedPayout.toFixed(2)+", profit $"+quotedProfit.toFixed(2)+", BE "+breakEven.toFixed(1)+"% · normal AUTO filter requires profit ≥$0.27 and BE ≤57%.");
+            setState("TRADE SKIPPED · payout filter");
+          }else{
+            log((testModeActive?"201B PAYOUT APPROVED · net return ≥75% · ":"PAYOUT APPROVED · ")+ "payout $"+quotedPayout.toFixed(2)+" · profit $"+quotedProfit.toFixed(2)+" · break-even "+breakEven.toFixed(1)+"%.");
+            send({buy:data.proposal.id,price:currentStake});
+          }
+        }
+      }
+      if(data.msg_type==="buy"&&data.buy){
+        pending=false;
+        contractId=Number(data.buy.contract_id);
+        if(testModeActive){testState.openContractId=contractId;saveTestState();}
+        $("openTrade").textContent="Open contract: #"+contractId+" · "+(data.buy.contract_type||"Rise/Fall");
+        setState("TRADE OPEN · waiting for 5-tick result");
+        log("Bought "+(data.buy.contract_type||"Rise/Fall")+" · contract #"+contractId+" · stake $"+currentStake.toFixed(2));
+        send({proposal_open_contract:1,contract_id:contractId,subscribe:1});
+      }
+      if(data.msg_type==="proposal_open_contract"&&data.proposal_open_contract){
+        const contract=data.proposal_open_contract;
+        if(contractId===null||Number(contract.contract_id)!==contractId)return;
+        if(data.subscription&&data.subscription.id)contractSub=data.subscription.id;
+        if(contract.is_sold){
+          const profit=Number(contract.profit)||0;
+          if(testModeActive){
+            testState.tradeCount++;
+            testState.totalProfit=Number((testState.totalProfit+profit).toFixed(2));
+            if(profit>0){testState.wins++;testState.currentLosingStreak=0;}else{testState.losses++;testState.currentLosingStreak=(testState.currentLosingStreak||0)+1;testState.maxLosingStreak=Math.max(testState.maxLosingStreak||0,testState.currentLosingStreak);}
+            testState.cycleProfit=Number((testState.cycleProfit+profit).toFixed(2));
+            testState.cycleBalance=Number((testState.cycleBalance+profit).toFixed(2));
+            testState.openContractId=null;
+            testState.peakTotalProfit=Math.max(testState.peakTotalProfit,testState.totalProfit);
+            const drawdown=Number((testState.peakTotalProfit-testState.totalProfit).toFixed(2));
+            if(drawdown>testState.maxDrawdown){testState.maxDrawdown=drawdown;testState.worstDrawdownTrade=testState.tradeCount;}
+            saveAndRenderTest();
+          }
+          profitToday+=profit;
+          virtualBalance=Number((virtualBalance+profit).toFixed(2));
+          if(profit>0){wins++;currentStake=BASE_STAKE;step=0;consecutiveLosses=0;pauseUntil=0;}
+          else{
+            losses++;
+            consecutiveLosses++;
+            currentStake=BASE_STAKE;
+            step=0;
+            if(consecutiveLosses>=2){
+              pauseUntil=Date.now()+LOSS_COOLDOWN_MS;
+              log("Two consecutive losses. PAUSED 60s - cooling down; AUTO will resume automatically.");
+              setState("PAUSED 60s - cooling down");
+            }
+          }
+          peakProfit=Math.max(peakProfit,profitToday);
+          if(peakProfit>=PROFIT_LOCK_ACTIVATION){
+            profitLockActive=true;
+            protectedProfit=Math.max(protectedProfit,peakProfit*PROFIT_LOCK_RATIO);
+          }
+          if(testModeActive){
+            testState.cyclePeakProfit=peakProfit;
+            testState.cycleProtectedProfit=protectedProfit;
+            testState.cycleProfitLockActive=profitLockActive;
+            testState.cycleProfit=profitToday;
+            testState.cycleBalance=virtualBalance;
+            saveTestState();
+          }
+          updateStats();
+          log((profit>0?"WIN":"LOSS")+" · "+(profit>=0?"+":"")+"$"+profit.toFixed(2)+" · session "+(profitToday>=0?"+":"")+"$"+profitToday.toFixed(2));
+          if(contractSub){send({forget:contractSub});contractSub=null;}
+          contractId=null;
+          if(testModeActive){testState.openContractId=null;saveTestState();}
+          $("openTrade").textContent="Open contract: none";
+          if(testModeActive){
+            const cycleLockHit=profitLockActive&&profitToday<=protectedProfit;
+            const cycleWon=virtualBalance>=VIRTUAL_TAKE_PROFIT||(cycleLockHit&&testState.cycleProfit>0);
+            const cycleLost=virtualBalance<=VIRTUAL_STOP||(cycleLockHit&&testState.cycleProfit<=0);
+            if(cycleWon||cycleLost){
+              if(cycleWon)testState.cyclesWon++;else testState.cyclesLost++;
+              log("TEST CYCLE "+(cycleWon?"WON":"LOST")+(cycleLockHit?" · Dynamic Profit Lock":"")+" · cycle "+testState.cycleNumber+" · "+(testState.cycleProfit>=0?"+$":"-$")+Math.abs(testState.cycleProfit).toFixed(2)+" · cumulative "+(testState.totalProfit>=0?"+$":"-$")+Math.abs(testState.totalProfit).toFixed(2));
+              testState.cycleNumber++;
+              if(testState.totalProfit<=-5){
+                testState.status="stopped";testModeActive=false;saveAndRenderTest();stopAutomation("TEST STOPPED · cumulative loss limit -$5.00 reached");
+                log("TEST STOPPED at cumulative loss limit. Review results before any new test.");
+              }else if(testState.tradeCount>=200){
+                testState.status="completed";testModeActive=false;saveAndRenderTest();stopAutomation("TEST COMPLETE · 200 settled trades recorded");
+                log("TEST COMPLETE · 200 settled trades. Review the full report.");
+              }else{
+                virtualBalance=VIRTUAL_START;profitToday=0;peakProfit=0;protectedProfit=0;profitLockActive=false;profitLockTriggered=false;virtualStopTriggered=false;consecutiveLosses=0;pauseUntil=0;currentStake=BASE_STAKE;step=0;
+                testState.cycleBalance=VIRTUAL_START;testState.cycleProfit=0;testState.cyclePeakProfit=0;testState.cycleProtectedProfit=0;testState.cycleProfitLockActive=false;
+                if(testState.firstCycleCheck){
+                  testState.firstCycleCheck=false;testState.status="paused";stopAutomation("FIRST TEST CYCLE COMPLETE · review the result, then RESUME TEST");
+                  log("FIRST CYCLE CHECK: test paused after one complete cycle. Review the cycle result before resuming.");
+                }else{
+                  testState.status=auto?"running":"paused";
+                  if(auto)setState("TEST RUNNING · cycle "+testState.cycleNumber+" · scanning R_10");
+                }
+                updateStats();saveAndRenderTest();
+                log("New TEST cycle "+testState.cycleNumber+" ready at virtual $10.00.");
+              }
+            }else if(testState.totalProfit<=-5){
+              testState.status="stopped";testModeActive=false;saveAndRenderTest();stopAutomation("TEST STOPPED · cumulative loss limit -$5.00 reached");
+              log("TEST STOPPED at cumulative loss limit. Review results before any new test.");
+            }else if(testState.tradeCount>=200){
+              testState.status="completed";testModeActive=false;saveAndRenderTest();stopAutomation("TEST COMPLETE · 200 settled trades recorded");
+              log("TEST COMPLETE · 200 settled trades. Review the full report.");
+            }else if(auto){setState(pauseUntil>Date.now()?"TEST PAUSED · 60s loss cooldown":"TEST RUNNING · scanning R_10");}
+          }else if(virtualBalance<=VIRTUAL_STOP){
+            virtualStopTriggered=true;stopAutomation("VIRTUAL STOP LOSS HIT · $"+virtualBalance.toFixed(2)+" · SESSION LOCKED");$("start").disabled=true;
+            log("Virtual balance reached the $9.30 stop floor. AUTO locked until virtual balance is reset.");
+          }else if(virtualBalance>=VIRTUAL_TAKE_PROFIT){
+            virtualStopTriggered=true;stopAutomation("VIRTUAL TAKE PROFIT HIT · $"+virtualBalance.toFixed(2)+" · SESSION LOCKED");$("start").disabled=true;
+            log("Virtual balance reached the $11.00 target. AUTO locked until virtual balance is reset.");
+          }else if(profitLockActive&&profitToday<=protectedProfit){
+            profitLockTriggered=true;virtualStopTriggered=true;stopAutomation("VIRTUAL PROFIT LOCK HIT · protected +$"+protectedProfit.toFixed(2)+" · SESSION LOCKED");$("start").disabled=true;
+            log("Dynamic Profit Lock triggered. Virtual session profit fell to the protected floor; AUTO locked until reset.");
+          }else if(auto){setState(pauseUntil>Date.now()?"PAUSED 60s - cooling down":"AUTO ON · scanning next tick signal");}
+          else{setState("AUTO OFF · last contract settled");}
+        }
+      }
+    };
+    socket.onerror=function(){if(ws!==socket)return;log("WebSocket error. Check network and Deriv access.");setState("Connection error");};
+    socket.onclose=function(event){
+      if(ws!==socket)return;
+      ws=null;authorized=false;auto=false;pending=false;
+      if(testState.status==="running"){pauseTestTimer();testState.status="paused";saveAndRenderTest();}
+      if(heartbeat){clearInterval(heartbeat);heartbeat=null;}
+      $("conn").textContent="Disconnected";
+      $("connect").disabled=false;$("disconnect").disabled=true;$("start").disabled=true;$("stop").disabled=true;
+      setState("Connection closed · code "+event.code);
+      log("Connection closed · code "+event.code);
+    };
+  }catch(error){
+    authorized=false;auto=false;
+    $("conn").textContent="Connection failed";
+    $("connect").disabled=false;$("disconnect").disabled=true;$("start").disabled=true;$("stop").disabled=true;
+    setState("Connection failed · "+error.message);
+    log(error.message);
+  }
+}
+function analyzeSignal(){
+  const needed=SIGNAL_WINDOW+1+BASELINE_WINDOW;
+  if(ticks.length<needed)return {ready:false,reason:"Collecting "+ticks.length+"/"+needed+" ticks for trend and volatility baseline."};
+  const recent=[];
+  for(let i=ticks.length-SIGNAL_WINDOW;i<ticks.length;i++)recent.push(ticks[i]-ticks[i-1]);
+  const baseline=[];
+  const start=ticks.length-needed+1,end=ticks.length-SIGNAL_WINDOW;
+  for(let i=start;i<end;i++)baseline.push(Math.abs(ticks[i]-ticks[i-1]));
+  const up=recent.filter(v=>v>0).length,down=recent.filter(v=>v<0).length;
+  const net=recent.reduce((a,b)=>a+b,0),path=recent.reduce((a,b)=>a+Math.abs(b),0);
+  const efficiency=path>0?Math.abs(net)/path:0,recentVol=path/SIGNAL_WINDOW;
+  const baselineVol=baseline.length?baseline.reduce((a,b)=>a+b,0)/baseline.length:0;
+  const volRatio=baselineVol>0?recentVol/baselineVol:0,dirMoves=Math.max(up,down);
+  const volOkay=volRatio>=MIN_VOL_RATIO&&volRatio<=MAX_VOL_RATIO;
+  const direction=net>0?"CALL":net<0?"PUT":null;
+  return {ready:true,direction,confirmed:!!direction&&dirMoves>=MIN_DIRECTIONAL_MOVES&&efficiency>=MIN_EFFICIENCY&&volOkay,dirMoves,efficiency,volRatio,volOkay};
+}
+function evaluateTicks(){
+  const a=analyzeSignal();
+  if(!a.ready){showSignal(null,a.reason);$("trendText").textContent="Trend / volatility: collecting baseline ticks";return;}
+  const details="Efficiency "+(a.efficiency*100).toFixed(0)+"% · volatility "+a.volRatio.toFixed(2)+"× baseline";
+  if(a.confirmed){showSignal(a.direction,a.direction+" confirmed · "+a.dirMoves+"/8 directional moves · "+details);$("trendText").textContent="Filter PASS · "+details;}
+  else{showSignal(null,"No trade · need 6/8 same direction, efficiency ≥65%, and volatility 0.60–1.80× baseline");$("trendText").textContent="Filter BLOCK · "+details+" · direction "+a.dirMoves+"/8 · volatility "+(a.volOkay?"OK":"outside range");}
+  if(!auto||!authorized||pending||contractId!==null)return;
+  const now=Date.now();
+  if(pauseUntil&&now>=pauseUntil){pauseUntil=0;consecutiveLosses=0;currentStake=BASE_STAKE;step=0;updateStats();log("60-second cooldown complete. AUTO-RESUME · fixed stake $0.35.");setState("AUTO ON · resumed after cooldown");}
+  if(pauseUntil&&now<pauseUntil){setState("PAUSED 60s - cooling down · "+Math.ceil((pauseUntil-now)/1000)+"s remaining");return;}
+  if(step>MAX_STEPS){currentStake=BASE_STAKE;step=0;updateStats();}
+  if(!a.confirmed||Date.now()-lastSignalAt<1000)return;
+  lastSignalAt=now;const contractType=a.direction;pending=true;
+  setState("Filtered signal confirmed · requesting "+(contractType==="CALL"?"RISE":"FALL")+" proposal");
+  log("TEST 203 filter PASS · "+contractType+" · "+a.dirMoves+"/8 direction · efficiency "+(a.efficiency*100).toFixed(0)+"% · volatility "+a.volRatio.toFixed(2)+"× baseline · fixed stake $"+currentStake.toFixed(2));
+  send({proposal:1,amount:currentStake,basis:"stake",contract_type:contractType,currency:currency,duration:DURATION,duration_unit:"t",underlying_symbol:SYMBOL,subscribe:1});
+}
+$("connect").addEventListener("click",connect);
+$("disconnect").addEventListener("click",disconnect);
+$("start").addEventListener("click",function(){
+  if(testModeActive){setState("TEST MODE ACTIVE · use the TEST panel to resume or pause it");return;}
+  if(!authorized)return;
+  if(virtualStopTriggered||profitLockTriggered){setState("VIRTUAL SESSION STOPPED · press RESET VIRTUAL TO $10 before restarting");return;}
+  if(currency!=="USD"){setState("START BLOCKED · Deriv account currency must be USD");log("Virtual $10 mode requires a USD Deriv demo account.");return;}
+  auto=true;$("start").disabled=true;$("stop").disabled=false;
+  setState("AUTO ON · watching Volatility 10 ticks");
+  log("AUTO started · VIRTUAL balance $"+virtualBalance.toFixed(2)+" · Deriv balance $"+balance.toFixed(2)+" (reference only) · R_10 · fixed $0.35 · 5 ticks · payout filter · virtual stop $9.30 · virtual target $11.00 · dynamic profit lock.");
+  evaluateTicks();
+});
+$("stop").addEventListener("click",function(){stopAutomation("AUTO OFF");log("Automation stopped. Any open contract will still be monitored.");});
+$("testStart").addEventListener("click",function(){
+  if(!authorized){setState("TEST BLOCKED · connect a Deriv DEMO account first");return;}
+  if(currency!=="USD"){setState("TEST BLOCKED · Deriv DEMO account currency must be USD");return;}
+  if(auto||pending||(contractId!==null&&!(testModeActive&&testState.openContractId!==null))){setState("TEST BLOCKED · wait for AUTO/open contract to stop first");return;}
+  if(testState.status==="completed"||testState.status==="stopped"||testState.status==="new"){
+    if(testState.status!=="new"&&!confirm("Start a NEW 200-trade test and replace the saved test record?"))return;
+    testState={version:1,status:"paused",tradeCount:0,wins:0,losses:0,totalProfit:0,cyclesWon:0,cyclesLost:0,cycleNumber:1,cycleBalance:VIRTUAL_START,cycleProfit:0,cyclePeakProfit:0,cycleProtectedProfit:0,cycleProfitLockActive:false,firstCycleCheck:true,peakTotalProfit:0,maxDrawdown:0,worstDrawdownTrade:0,currentLosingStreak:0,maxLosingStreak:0,openContractId:null,elapsedMs:0,startedAt:null};
+    testModeActive=true;virtualBalance=VIRTUAL_START;profitToday=0;wins=0;losses=0;consecutiveLosses=0;pauseUntil=0;peakProfit=0;protectedProfit=0;profitLockActive=false;profitLockTriggered=false;virtualStopTriggered=false;currentStake=BASE_STAKE;step=0;updateStats();
+    log("New TEST 203 started · DEMO only · R_10 · $10 cycle · $0.35 fixed stake · net return filter ≥75%.");
+  }else{
+    testModeActive=true;
+    if(testState.openContractId!==null&&contractId===null)contractId=Number(testState.openContractId);
+    virtualBalance=testState.cycleBalance;
+  }
+  testState.status="running";startTestTimer();auto=true;$("start").disabled=true;$("stop").disabled=false;
+  saveAndRenderTest();setState("TEST 203 RUNNING · cycle "+testState.cycleNumber+" · R_10 · DEMO");
+  log("TEST resumed · "+testState.tradeCount+"/200 settled trades · cumulative "+(testState.totalProfit>=0?"+$":"-$")+Math.abs(testState.totalProfit).toFixed(2));
+  if(contractId===null)evaluateTicks();
+});
+$("testPause").addEventListener("click",function(){
+  if(testState.status!=="running")return;
+  pauseTestTimer();testState.status="paused";stopAutomation("TEST PAUSED · progress saved");saveAndRenderTest();
+  log("TEST paused by user. Saved progress: "+testState.tradeCount+"/200 trades.");
+});
+$("testReset").addEventListener("click",function(){
+  if(auto||pending||contractId!==null){setState("RESET BLOCKED · pause test and wait for open contract to settle");return;}
+  if(!confirm("Clear only the saved TEST 203 record on this browser? TEST 200 and TEST 201A are stored separately and will not be changed."))return;
+  testState={version:1,status:"new",tradeCount:0,wins:0,losses:0,totalProfit:0,cyclesWon:0,cyclesLost:0,cycleNumber:1,cycleBalance:VIRTUAL_START,cycleProfit:0,cyclePeakProfit:0,cycleProtectedProfit:0,cycleProfitLockActive:false,peakTotalProfit:0,maxDrawdown:0,worstDrawdownTrade:0,currentLosingStreak:0,maxLosingStreak:0,openContractId:null,elapsedMs:0,startedAt:null};
+  testModeActive=false;saveAndRenderTest();log("Saved TEST 203 record cleared. TEST 200 and TEST 201A records were not changed.");
+});
+$("resetVirtual").addEventListener("click",function(){
+  if(auto||pending||contractId!==null||testModeActive){setState("RESET BLOCKED · finish or reset the TEST mode first");return;}
+  virtualBalance=VIRTUAL_START;profitToday=0;wins=0;losses=0;consecutiveLosses=0;pauseUntil=0;
+  peakProfit=0;protectedProfit=0;profitLockActive=false;profitLockTriggered=false;virtualStopTriggered=false;
+  currentStake=BASE_STAKE;step=0;updateStats();$("start").disabled=!authorized;
+  log("Virtual account reset to $10.00. Deriv account balance is unchanged.");
+  setState(authorized?"VIRTUAL $10 READY · AUTO OFF":"VIRTUAL $10 RESET · connect DEMO to trade");
+});
+loadTestState();renderTestStats();updateStats();
+})(); 
+</script>
+</body>
+</html>
