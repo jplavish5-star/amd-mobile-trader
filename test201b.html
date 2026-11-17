@@ -505,7 +505,7 @@ $("testPause").addEventListener("click",function(){
 });
 $("testReset").addEventListener("click",function(){
   if(auto||pending||contractId!==null){setState("RESET BLOCKED · pause test and wait for open contract to settle");return;}
-  if(!confirm("Clear only the saved TEST 201B record on this browser? TEST 200 and TEST 201B are stored separately and will not be changed."))return;
+  if(!confirm("Clear only the saved TEST 201B record on this browser? TEST 200 and TEST 201A are stored separately and will not be changed."))return;
   testState={version:1,status:"new",tradeCount:0,wins:0,losses:0,totalProfit:0,cyclesWon:0,cyclesLost:0,cycleNumber:1,cycleBalance:VIRTUAL_START,cycleProfit:0,cyclePeakProfit:0,cycleProtectedProfit:0,cycleProfitLockActive:false,peakTotalProfit:0,maxDrawdown:0,worstDrawdownTrade:0,openContractId:null};
   testModeActive=false;saveAndRenderTest();log("Saved TEST 201B record cleared. TEST 200 and TEST 201B records were not changed.");
 });
