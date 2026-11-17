@@ -37,11 +37,13 @@ button{padding:14px;border:0;border-radius:11px;font-weight:750;font-size:14px;c
 </div>
 <div class="card">
 <h2>Fetch public Deriv R_10 history</h2>
-<p>Uses public ticks_history only, with App ID 1089. No PAT field, no authorize call and no account connection. Downloads up to 50,000 ticks in 5,000-tick batches.</p>
+<p>Uses public ticks_history only and the same Deriv App ID you enter in your working bot. No PAT, no authorize call and no account connection. Downloads up to 50,000 ticks in 5,000-tick batches.</p>
+<label for="appid">Your Deriv App ID (paste exactly as used by your working bot)</label>
+<input id="appid" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste your existing Deriv App ID">
 <div class="grid">
 <div><label>Market</label><div class="stat">R_10</div></div>
 <div><label>Maximum history</label><div class="stat">50,000 ticks</div></div>
-<div><label>App ID</label><div class="stat">1089 (public)</div></div>
+<div><label>App ID used</label><div class="stat" id="appidUsed">Not entered</div></div>
 <div><label>Connection timeout</label><div class="stat">30 seconds</div></div>
 </div>
 <button class="primary" id="fetch" style="width:100%;margin-top:12px">FETCH REAL R_10 HISTORY</button>
@@ -78,7 +80,7 @@ button{padding:14px;border:0;border-radius:11px;font-weight:750;font-size:14px;c
 (function(){
 "use strict";
 const $=id=>document.getElementById(id);
-const CFG={symbol:"R_10",appId:1089,batch:5000,maxTicks:50000,timeout:30000,expiry:5,stake:.35,win:.2625,loss:-.35,target:1000,threshold:58};
+const CFG={symbol:"R_10",batch:5000,maxTicks:50000,timeout:30000,expiry:5,stake:.35,win:.2625,loss:-.35,target:1000,threshold:58};
 let busy=false,ws=null,timeoutId=null,prices=[],times=[],downloadPrices=[],downloadTimes=[],nextEnd="latest",batchCount=0;
 function log(s){$("log").textContent+="\n"+new Date().toLocaleTimeString()+"  "+s;$("log").scrollTop=$("log").scrollHeight;}
 function money(n){return (n<0?"-$":"+$")+Math.abs(n).toFixed(2);}
@@ -189,10 +191,12 @@ if(timeoutId)clearTimeout(timeoutId);
 timeoutId=setTimeout(()=>failFetch("30-second timeout waiting for the next Deriv history response. Batch "+batchCount+"; "+downloadPrices.length+" ticks received."),CFG.timeout);
 }
 $("fetch").addEventListener("click",()=>{
-if(busy)return;resetStats();downloadPrices=[];downloadTimes=[];batchCount=0;nextEnd="latest";busy=true;
-$("fetch").disabled=true;$("upload").disabled=true;status("Connecting to Deriv public history…");setProgress(0,"Connecting · 0 / 50,000 ticks.");
-const url="wss://ws.derivws.com/websockets/v3?app_id="+CFG.appId;
-log("Opening "+url+" · public ticks_history only · no PAT, no authorize, no trades.");
+if(busy)return;const appId=$("appid").value.trim();
+if(!/^[A-Za-z0-9_-]{1,64}$/.test(appId)){status("Paste the same App ID used by your working bot. Letters and numbers are accepted.");log("Fetch not started: App ID is missing or contains unsupported characters.");return;}
+resetStats();downloadPrices=[];downloadTimes=[];batchCount=0;nextEnd="latest";busy=true;
+$("fetch").disabled=true;$("upload").disabled=true;$("appidUsed").textContent=appId;status("Connecting to Deriv public history with your App ID…");setProgress(0,"Connecting · 0 / 50,000 ticks.");
+const url="wss://ws.derivws.com/websockets/v3?app_id="+encodeURIComponent(appId);
+log("Opening official Deriv WebSocket with the App ID entered in this page · public ticks_history only · no PAT, no authorize, no trades.");
 try{
 ws=new WebSocket(url);
 timeoutId=setTimeout(()=>failFetch("30-second connection timeout. Use CSV/JSON upload fallback."),CFG.timeout);
