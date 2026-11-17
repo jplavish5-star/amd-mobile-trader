@@ -11,12 +11,12 @@
 <p>Uses the existing TEST 201B authentication sequence: DEMO PAT + App ID → account lookup → secure OTP WebSocket → history requests only. Enter credentials manually; this page does not save them.</p>
 <label for="pat">Existing DEMO Personal Access Token (PAT)</label><input id="pat" type="password" autocomplete="off" placeholder="Enter the same DEMO PAT used before">
 <label for="appid">Existing Deriv App ID</label><input id="appid" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Enter the same App ID used before">
-<div class="row" style="margin-top:12px"><button id="fetch" class="primary">START NEW FETCH</button><button id="resume" class="secondary" disabled>RESUME FETCH</button></div><p class="small">Partial progress is saved on this device after each batch. Resume continues from the oldest saved tick. Do not clear site data while a fetch is incomplete.</p>
+<div class="row" style="margin-top:12px"><button id="fetch" class="primary">START NEW FETCH</button><button id="resume" class="secondary" disabled>RESUME FETCH</button></div><button id="usePartial" class="secondary" style="width:100%;margin-top:10px" disabled>USE WHAT WE HAVE — SPLIT 70/30</button><p class="small">Partial progress is saved on this device after each batch. Resume continues from the oldest saved tick. Do not clear site data while a fetch is incomplete.</p>
 <p id="status">Waiting. Nothing has been fetched yet.</p><div class="meter"><i id="bar"></i></div><p id="progress" class="small">0 / 50,000 ticks</p></div>
 <div class="card"><h2>2. Automatic split and lock</h2><div class="grid">
 <div><label>TRAIN</label><div class="stat" id="trainCount">Not loaded</div></div><div><label>UNSEEN</label><div class="stat" id="testCount">LOCKED · not loaded</div></div>
 <div><label>TRAIN date range</label><div class="small" id="trainRange">—</div></div><div><label>UNSEEN date range</label><div class="small" id="testRange">—</div></div>
-</div><p class="small">After a successful fetch, the oldest 35,000 ticks become TRAIN and the newest 15,000 become UNSEEN. Only TRAIN is passed to the analysis functions. UNSEEN is not tested, previewed, or used to choose settings.</p>
+</div><p class="small">After a successful full fetch, the oldest 70% become TRAIN and newest 30% become UNSEEN. If you choose USE WHAT WE HAVE, the same 70/30 split is applied to the saved partial dataset. Only TRAIN is analyzed; UNSEEN stays locked.</p>
 <label>TRAIN SHA-256</label><div class="hash" id="trainHash">Not calculated</div><label>UNSEEN SHA-256</label><div class="hash" id="testHash">Not calculated</div><p class="small">The hash identifies the exact ordered timestamp/price records. The page's lock is a workflow safeguard, not tamper-proof encryption: because this runs in your browser, it cannot prevent someone with developer tools from inspecting memory. Do not treat it as a secure vault.</p></div>
 <div class="card"><h2>3. Hypothesis A — TRAIN only</h2>
 <p><b>3-in-a-row:</b> after three consecutive rises, predict FALL; after three consecutive falls, predict RISE.<br><b>4-in-a-row:</b> same rule after four consecutive moves.<br>Entry is the price at the end of the streak; outcome is price five ticks later. After each evaluated outcome, skip five ticks before looking for another signal. No overlapping outcome windows.</p>
@@ -31,7 +31,7 @@ const $=id=>document.getElementById(id),CFG={symbol:'R_10',batch:1000,batches:50
 const PARTIAL_KEY='research204_partial';let socket=null,timer=null,busy=false,allRows=[],trainRows=[],unseenRows=[],trainHash='',unseenHash='';
 function log(s){$('log').textContent+='\n'+new Date().toLocaleTimeString()+'  '+s;$('log').scrollTop=$('log').scrollHeight}
 function status(s){$('status').textContent=s}
-function stop(){if(timer){clearTimeout(timer);timer=null}const w=socket;socket=null;busy=false;if(w){w.onopen=w.onmessage=w.onerror=w.onclose=null;try{w.close()}catch(e){}}$('fetch').disabled=false;$('resume').disabled=!loadPartial();$('run').disabled=!trainRows.length;$('pat').value=''}
+function stop(){if(timer){clearTimeout(timer);timer=null}const w=socket;socket=null;busy=false;if(w){w.onopen=w.onmessage=w.onerror=w.onclose=null;try{w.close()}catch(e){}}$('fetch').disabled=false;$('resume').disabled=!loadPartial();$('usePartial').disabled=!(loadPartial()?.rows?.length);$('run').disabled=!trainRows.length;$('pat').value=''}
 function loadPartial(){try{const v=JSON.parse(localStorage.getItem(PARTIAL_KEY)||'null');return v&&Array.isArray(v.rows)?v:null}catch(e){return null}}
 function savePartial(v){try{localStorage.setItem(PARTIAL_KEY,JSON.stringify(v));$('resume').disabled=false;return true}catch(e){log('Local storage could not save progress: '+e.message);return false}}
 function fail(s){log(s);status('Paused safely. Saved progress is available with RESUME if storage succeeded. No analysis was run.');stop()}
@@ -42,9 +42,10 @@ function renderSplit(){
 $('trainCount').textContent=trainRows.length.toLocaleString()+' ticks';$('testCount').textContent=unseenRows.length.toLocaleString()+' ticks · LOCKED';
 $('trainRange').textContent=dateRange(trainRows);$('testRange').textContent=dateRange(unseenRows);
 $('trainHash').textContent=trainHash;$('testHash').textContent=unseenHash;
-$('run').disabled=false;$('gate').textContent='UNSEEN LOCKED · no test has been run on the final 15,000 ticks.';
+$('run').disabled=false;$('gate').textContent='UNSEEN LOCKED · '+unseenRows.length.toLocaleString()+' ticks withheld from analysis.';
 }
-function normalize(ts,ps){const rows=ps.map((p,i)=>({t:Number(ts[i]),p:Number(p),i})).filter(x=>Number.isFinite(x.t)&&Number.isFinite(x.p));rows.sort((a,b)=>a.t-b.t||a.i-b.i);const out=[];for(const r of rows)out.push({t:r.t,p:r.p});if(out.length!==50000)throw Error('Expected exactly 50,000 valid ticks; received '+out.length+'. Do not analyze a partial dataset.');return out}
+function normalize(ts,ps){const rows=ps.map((p,i)=>({t:Number(ts[i]),p:Number(p),i})).filter(x=>Number.isFinite(x.t)&&Number.isFinite(x.p));rows.sort((a,b)=>a.t-b.t||a.i-b.i);return rows.map(r=>({t:r.t,p:r.p}))}
+async function prepareDataset(rows,label){if(!Array.isArray(rows)||rows.length<1000)throw Error('Need at least 1,000 saved ticks. Found '+(rows?.length||0)+'.');allRows=normalize(rows.map(x=>x.t),rows.map(x=>x.p));const splitAt=Math.floor(allRows.length*.70);trainRows=allRows.slice(0,splitAt);unseenRows=allRows.slice(splitAt);trainHash='';unseenHash='';$('trainCount').textContent=trainRows.length.toLocaleString()+' ticks';$('testCount').textContent=unseenRows.length.toLocaleString()+' ticks · LOCKED';$('trainRange').textContent=dateRange(trainRows);$('testRange').textContent=dateRange(unseenRows);$('trainHash').textContent='Calculating…';$('testHash').textContent='Calculating…';$('run').disabled=true;status(label+': '+allRows.length.toLocaleString()+' saved ticks split 70/30. Calculating hashes…');trainHash=await hashRows(trainRows);unseenHash=await hashRows(unseenRows);renderSplit();log(label+': '+allRows.length.toLocaleString()+' ticks sorted; '+trainRows.length.toLocaleString()+' TRAIN / '+unseenRows.length.toLocaleString()+' UNSEEN. Hashes calculated.')}
 function stats(trades){
 let wins=0,losses=0,ties=0,pl=0,peak=0,dd=0,streak=0,longest=0;
 for(const x of trades){if(x.result==='W'){wins++;pl=+(pl+CFG.win).toFixed(4);streak=0}else if(x.result==='L'){losses++;pl=+(pl+CFG.loss).toFixed(4);streak++;longest=Math.max(longest,streak)}else{ties++;streak=0}peak=Math.max(peak,pl);dd=Math.max(dd,peak-pl)}
@@ -71,7 +72,7 @@ const enough=s.n>=CFG.minTrades,clears=enough&&s.rate>=CFG.minRate&&s.pl>0;
 return '<div class="result"><b>'+name+'</b><div class="grid"><div><label>Trades</label><div class="stat">'+s.n.toLocaleString()+'</div></div><div><label>Win rate</label><div class="stat '+(s.rate>=60?'good':'bad')+'">'+s.rate.toFixed(2)+'%</div></div><div><label>Wins / losses / ties</label><div class="stat">'+s.wins+' / '+s.losses+' / '+s.ties+'</div></div><div><label>Estimated net P/L</label><div class="stat '+(s.pl>0?'good':'bad')+'">'+(s.pl<0?'-$'+Math.abs(s.pl).toFixed(2):'+$'+s.pl.toFixed(2))+'</div></div><div><label>Max drawdown</label><div class="stat">-$'+s.dd.toFixed(2)+'</div></div><div><label>Longest losing streak</label><div class="stat">'+s.longest+'</div></div></div><p class="small">Random baseline win rate: '+baseline.rate.toFixed(2)+'% · '+baseline.n+' matched candidate entries. '+(clears?'TRAIN GATE CLEARED':'TRAIN GATE NOT CLEARED')+'</p></div>'
 }
 function runTrain(){
-if(!trainRows.length||unseenRows.length!==15000){$('gate').textContent='BLOCKED: exact 35,000/15,000 split not available.';return}
+if(!trainRows.length||!unseenRows.length){$('gate').textContent='BLOCKED: TRAIN/UNSEEN split is not ready.';return}
 const a3=evaluate(trainRows,3,false),r3=evaluate(trainRows,3,true),a4=evaluate(trainRows,4,false),r4=evaluate(trainRows,4,true);
 $('results').innerHTML=card('3 consecutive moves → reverse',a3,r3)+card('4 consecutive moves → reverse',a4,r4);
 const p3=a3.n>=CFG.minTrades&&a3.rate>=CFG.minRate&&a3.pl>0,p4=a4.n>=CFG.minTrades&&a4.rate>=CFG.minRate&&a4.pl>0;
@@ -112,22 +113,13 @@ if(d.msg_type!=='history'||!d.history)return;
 const ps=(d.history.prices||[]).map(Number),ts=(d.history.times||[]).map(Number);
 const incoming=ps.map((p,i)=>({t:ts[i],p})).filter(x=>Number.isFinite(x.t)&&Number.isFinite(x.p));
 if(timer){clearTimeout(timer);timer=null}attempt=0;
-if(!incoming.length){emptyStreak++;log('Empty batch '+emptyStreak+'/3.');if(emptyStreak>=3){fail('Three consecutive empty batches. Saved progress preserved; resume later.');return}older=older==='latest'?Math.floor(Date.now()/1000)-1:older-1;timer=setTimeout(requestBatch,300);return}
+if(!incoming.length){emptyStreak++;log('Empty batch '+emptyStreak+'/3.');if(emptyStreak>=3){fail('Three consecutive empty batches. Fetch stopped. Saved progress preserved; press USE WHAT WE HAVE.');return}older=older==='latest'?Math.floor(Date.now()/1000)-3600:older-3600;timer=setTimeout(requestBatch,300);return}
 emptyStreak=0;const before=rows.length;rows=mergeBatch(rows,incoming);
-if(rows.length===before){emptyStreak++;const oldestInBatch=Math.min(...incoming.map(x=>x.t));const priorEnd=older==='latest'?Math.floor(Date.now()/1000):Number(older);older=Math.min(priorEnd,oldestInBatch)-1;log('Batch contained no new unique tick records ('+emptyStreak+'/3). Moving history end further back to '+older+'.')}else{batch++;older=Math.min(...incoming.map(x=>x.t))-1;log('Batch '+batch+' received '+incoming.length+' ticks; saved total '+rows.length+'.')}
-if(emptyStreak>=3){fail('Three consecutive batches added no new ticks. Saved progress preserved; resume later.');return}
+if(rows.length===before){emptyStreak++;const oldestInBatch=Math.min(...incoming.map(x=>x.t));const priorEnd=older==='latest'?Math.floor(Date.now()/1000):Number(older);older=Math.min(priorEnd,oldestInBatch)-3600;log('Batch contained no new unique tick records ('+emptyStreak+'/3). Moving history end back 3,600 seconds to '+older+'.')}else{batch++;older=Math.min(...incoming.map(x=>x.t))-1;log('Batch '+batch+' received '+incoming.length+' ticks; saved total '+rows.length+'.')}
+if(emptyStreak>=3){fail('Three consecutive batches added no new ticks. Fetch stopped. Saved progress preserved; press USE WHAT WE HAVE.');return}
 if(!savePartial({rows,batch,end:older})){fail('Could not persist this batch to local storage. Stopped to avoid losing further progress.');return}
 $('bar').style.width=(Math.min(rows.length,CFG.max)/CFG.max*100)+'%';$('progress').textContent=rows.length.toLocaleString()+' / 50,000 ticks · batch '+batch;
-if(rows.length>=CFG.max){
-const sorted=rows.slice().sort((a,b)=>a.t-b.t);const exact=sorted.slice(-CFG.max);
-try{allRows=normalize(exact.map(x=>x.t),exact.map(x=>x.p));}catch(e){fail('Final data validation failed: '+e.message);return}
-if(timer){clearTimeout(timer);timer=null}stop();trainRows=allRows.slice(0,35000);unseenRows=allRows.slice(35000);
-status('Exactly 50,000 ticks verified. TRAIN/UNSEEN split complete; UNSEEN locked.');
-log('50,000 unique ordered records verified. Split 35,000 TRAIN / 15,000 UNSEEN.');
-localStorage.removeItem(PARTIAL_KEY);$('resume').disabled=true;
-hashRows(trainRows).then(h=>{trainHash=h;return hashRows(unseenRows)}).then(h=>{unseenHash=h;renderSplit()}).catch(e=>{status('Hash calculation failed: '+e.message);$('run').disabled=true});
-return;
-}
+if(rows.length>=CFG.max){if(timer){clearTimeout(timer);timer=null}stop();try{await prepareDataset(rows.slice(-CFG.max),'FULL FETCH COMPLETE');}catch(e){status('Final data validation/hash failed: '+e.message);$('run').disabled=true;}localStorage.removeItem(PARTIAL_KEY);$('resume').disabled=true;$('usePartial').disabled=true;return;}
 timer=setTimeout(requestBatch,300);
 };
 current.onerror=()=>{if(socket===current)retry('WebSocket error.')};
@@ -136,7 +128,8 @@ current.onclose=e=>{if(socket===current&&busy)retry('WebSocket closed · code '+
 }
 $('fetch').addEventListener('click',()=>beginFetch(false));
 $('resume').addEventListener('click',()=>beginFetch(true));
-$('resume').disabled=!loadPartial();
+$('usePartial').addEventListener('click',async()=>{if(busy)stop();const saved=loadPartial();if(!saved||!Array.isArray(saved.rows)){status('No saved partial ticks found on this device.');return}$('fetch').disabled=true;$('resume').disabled=true;$('usePartial').disabled=true;$('run').disabled=true;try{await prepareDataset(saved.rows,'PARTIAL DATASET ACCEPTED');status('Ready: '+allRows.length.toLocaleString()+' saved ticks split 70/30. TRAIN analysis is available. UNSEEN remains locked.');}catch(e){status('Could not prepare saved data: '+e.message);$('usePartial').disabled=false;}$('fetch').disabled=false;$('resume').disabled=!loadPartial();});
+$('resume').disabled=!loadPartial();$('usePartial').disabled=!(loadPartial()?.rows?.length);
 $('run').addEventListener('click',runTrain);
 })();
 </script></body></html>
