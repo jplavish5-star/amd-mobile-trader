@@ -114,7 +114,7 @@ const incoming=ps.map((p,i)=>({t:ts[i],p})).filter(x=>Number.isFinite(x.t)&&Numb
 if(timer){clearTimeout(timer);timer=null}attempt=0;
 if(!incoming.length){emptyStreak++;log('Empty batch '+emptyStreak+'/3.');if(emptyStreak>=3){fail('Three consecutive empty batches. Saved progress preserved; resume later.');return}older=older==='latest'?Math.floor(Date.now()/1000)-1:older-1;timer=setTimeout(requestBatch,300);return}
 emptyStreak=0;const before=rows.length;rows=mergeBatch(rows,incoming);
-if(rows.length===before){emptyStreak++;log('Batch contained no new unique tick records ('+emptyStreak+'/3).')}else{batch++;older=Math.min(...incoming.map(x=>x.t))-1;log('Batch '+batch+' received '+incoming.length+' ticks; saved total '+rows.length+'.')}
+if(rows.length===before){emptyStreak++;const oldestInBatch=Math.min(...incoming.map(x=>x.t));const priorEnd=older==='latest'?Math.floor(Date.now()/1000):Number(older);older=Math.min(priorEnd,oldestInBatch)-1;log('Batch contained no new unique tick records ('+emptyStreak+'/3). Moving history end further back to '+older+'.')}else{batch++;older=Math.min(...incoming.map(x=>x.t))-1;log('Batch '+batch+' received '+incoming.length+' ticks; saved total '+rows.length+'.')}
 if(emptyStreak>=3){fail('Three consecutive batches added no new ticks. Saved progress preserved; resume later.');return}
 if(!savePartial({rows,batch,end:older})){fail('Could not persist this batch to local storage. Stopped to avoid losing further progress.');return}
 $('bar').style.width=(Math.min(rows.length,CFG.max)/CFG.max*100)+'%';$('progress').textContent=rows.length.toLocaleString()+' / 50,000 ticks · batch '+batch;
