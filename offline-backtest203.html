@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="theme-color" content="#10141c">
+<title>OFFLINE BACKTEST 203 · Synthetic Test</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,Arial,sans-serif;background:#10141c;color:#f4f6fb}
+*{box-sizing:border-box}body{margin:0;padding:14px;max-width:760px;margin:auto}
+.card{background:#1b222d;border:1px solid #303b4b;border-radius:16px;padding:16px;margin:12px 0}
+h1{font-size:23px;margin:8px 0}h2{font-size:17px;margin:0 0 12px}
+p{color:#b8c3d2;font-size:14px;line-height:1.5}
+.pill{display:inline-block;padding:5px 9px;border-radius:20px;background:#313e50;font-size:12px}
+.notice{background:#352817;border:1px solid #8a5a20;border-radius:12px;padding:13px;color:#ffdc9c;font-weight:750}
+.stat{font-size:21px;font-weight:750;overflow-wrap:anywhere}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+label{display:block;font-size:12px;color:#cbd5e1;margin:8px 0 4px}
+.green{color:#37df9d}.red{color:#ff7187}.small{font-size:12px}
+button{padding:14px;border:0;border-radius:11px;font-weight:750;font-size:15px;cursor:pointer}
+button:disabled{opacity:.45;cursor:not-allowed}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.primary{background:#1677ff;color:white}.secondary{background:#344154;color:white}
+.timer{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.timer-value{font-size:27px;font-weight:850;font-variant-numeric:tabular-nums;letter-spacing:.5px}
+.track{height:9px;background:#0b1017;border-radius:99px;overflow:hidden;margin-top:10px}
+.fill{height:100%;width:0;background:#3b91ff;transition:width .08s linear}
+#log{height:140px;overflow:auto;background:#070a0f;color:#b9d6ff;border-radius:10px;padding:12px;font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap}
+.warning{border-left:4px solid #e5a63a;padding-left:10px}
+</style>
+</head>
+<body>
+<div class="card">
+<span class="pill">OFFLINE · SYNTHETIC DATA · NO DERIV CONNECTION</span>
+<h1>OFFLINE BACKTEST 203</h1>
+<p>Runs the TEST 203 signal rules on 50,000 locally generated synthetic ticks. It does not fetch market data and cannot place trades.</p>
+<div class="notice">SIMULATION ONLY — THESE ARE NOT REAL DERIV TICKS OR HISTORICAL RESULTS. A good score here does not show that the strategy has a real-market edge.</div>
+</div>
+
+<div class="card">
+<h2>Run status and timer</h2>
+<div class="timer">
+<div><label>ELAPSED / 30-SECOND LIMIT</label><div class="timer-value" id="timer">00:00.0 / 00:30.0</div></div>
+<div><label>PROGRESS</label><div class="stat" id="progressText">Ready · 0 / 50,000</div></div>
+</div>
+<div class="track"><div class="fill" id="progressBar"></div></div>
+<p id="status">Ready. Press RUN OFFLINE TEST. Target completion is under 10 seconds; the 30-second timer stops a frozen run.</p>
+<div class="row" style="margin-top:12px">
+<button class="primary" id="run">RUN OFFLINE TEST</button>
+<button class="secondary" id="clear">CLEAR RESULTS</button>
+</div>
+</div>
+
+<div class="card">
+<h2>Strategy settings — same TEST 203 filters</h2>
+<div class="grid">
+<div><label>Generated ticks</label><div class="stat">50,000</div></div>
+<div><label>Contract duration</label><div class="stat">5 ticks</div></div>
+<div><label>Recent direction window</label><div class="stat">8 moves</div></div>
+<div><label>Direction agreement</label><div class="stat">At least 6 / 8</div></div>
+<div><label>Efficiency ratio</label><div class="stat">≥ 65%</div></div>
+<div><label>Volatility ratio</label><div class="stat">0.60×–1.80×</div></div>
+<div><label>Simulated stake</label><div class="stat">$0.35</div></div>
+<div><label>Assumed win / loss</label><div class="stat"><span class="green">+$0.2625</span> / <span class="red">-$0.35</span></div></div>
+</div>
+<p class="small">Synthetic generator: deterministic, seeded, unbiased random up/down steps with varied step sizes. The generated series is artificial and is not calibrated to Deriv R_10.</p>
+</div>
+
+<div class="card">
+<h2>Results</h2>
+<div class="grid">
+<div><label>Qualifying signals</label><div class="stat" id="signals">--</div></div>
+<div><label>Simulated trades</label><div class="stat" id="trades">--</div></div>
+<div><label>Wins</label><div class="stat green" id="wins">--</div></div>
+<div><label>Losses</label><div class="stat red" id="losses">--</div></div>
+<div><label>Ties / refunds</label><div class="stat" id="ties">--</div></div>
+<div><label>Win rate (ties excluded)</label><div class="stat" id="winrate">--</div></div>
+<div><label>Estimated P/L</label><div class="stat" id="profit">--</div></div>
+<div><label>Maximum drawdown</label><div class="stat" id="drawdown">--</div></div>
+<div><label>Longest losing streak</label><div class="stat" id="streak">--</div></div>
+<div><label>Generated ticks</label><div class="stat" id="tickCount">--</div></div>
+<div><label>Elapsed time</label><div class="stat" id="elapsedResult">--</div></div>
+<div><label>Test verdict</label><div class="stat" id="verdict">NOT RUN</div></div>
+</div>
+<p class="small" id="note">This is a software smoke test only. Do not use this synthetic result to approve TEST 203 for live or real-money trading.</p>
+</div>
+
+<div class="card">
+<h2>What this test can and cannot tell us</h2>
+<p>It can confirm that 50,000 ticks can be generated, the TEST 203 filters execute, and the reporting calculations work on your phone.</p>
+<p class="warning">It cannot measure strategy profitability, Deriv payout availability, slippage, latency, or performance on real R_10 prices. The win/loss payout model is only an arithmetic assumption: +$0.2625 for a win, -$0.35 for a loss, and $0 for a tie. Any PASS below means only that the offline code completed — never that the strategy is profitable.</p>
+<p>After this smoke test, a real-market historical-data test is still needed before even considering a separate DEMO validation. Keep real money out of this.</p>
+</div>
+
+<div class="card"><h2>Activity log</h2><div id="log">Offline TEST 203 ready. No internet, App ID, PAT, WebSocket, or Deriv account required.</div></div>
+
+<script>
+(function(){
+"use strict";
+const $=id=>document.getElementById(id);
+const TOTAL=50000,CHUNK=5000,EXPIRY=5,STAKE=0.35,WIN=0.2625,LOSS=-0.35;
+const SIGNAL_WINDOW=8,BASELINE_WINDOW=20,MIN_DIRECTIONAL_MOVES=6,MIN_EFFICIENCY=0.65,MIN_VOL_RATIO=0.60,MAX_VOL_RATIO=1.80;
+let busy=false,startedAt=0,clock=null,hardStop=null,job=null,ticks=[],seed=2032026,progress=0;
+function log(s){$("log").textContent+="\n"+new Date().toLocaleTimeString()+"  "+s;$("log").scrollTop=$("log").scrollHeight;}
+function money(n){return (n>=0?"+$":"-$")+Math.abs(n).toFixed(2);}
+function elapsed(){return Math.max(0,(Date.now()-startedAt)/1000);}
+function showTimer(){const t=Math.min(30,elapsed());$("timer").textContent="00:"+t.toFixed(1).padStart(4,"0")+" / 00:30.0";}
+function stopTimers(){if(clock){clearInterval(clock);clock=null;}if(hardStop){clearTimeout(hardStop);hardStop=null;}if(job){clearTimeout(job);job=null;}}
+function setProgress(n){progress=n;$("progressText").textContent=n.toLocaleString()+" / "+TOTAL.toLocaleString();$("progressBar").style.width=(n/TOTAL*100).toFixed(1)+"%";}
+function clearResults(){
+ ["signals","trades","wins","losses","ties","winrate","profit","drawdown","streak","tickCount","elapsedResult"].forEach(id=>$(id).textContent="--");
+ $("verdict").textContent="NOT RUN";$("verdict").className="stat";
+ $("note").textContent="This is a software smoke test only. Do not use this synthetic result to approve TEST 203 for live or real-money trading.";
+}
+function finishRun(message){
+ stopTimers();busy=false;$("run").disabled=false;
+ const secs=elapsed();showTimer();$("elapsedResult").textContent=secs.toFixed(2)+" sec";
+ $("status").textContent=message;
+}
+function timeoutRun(){
+ if(!busy)return;
+ log("30-second safety timeout reached. Run stopped; no partial result is marked as complete.");
+ finishRun("Stopped by the 30-second safety timer. Press RUN OFFLINE TEST to start again.");
+ $("verdict").textContent="TIMEOUT — INCOMPLETE";$("verdict").className="stat red";
+}
+function random(){
+ seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;
+ return (seed>>>0)/4294967296;
+}
+function generateChunk(){
+ if(!busy)return;
+ const end=Math.min(TOTAL,ticks.length+CHUNK);
+ while(ticks.length<end){
+  const magnitude=0.65+random()*0.70;
+  const regime=0.75+0.50*(0.5+0.5*Math.sin(ticks.length/1800));
+  const sign=random()<0.5?-1:1;
+  ticks.push(ticks.length===0?10000: ticks[ticks.length-1]+sign*magnitude*regime);
+ }
+ setProgress(ticks.length);
+ if(ticks.length<TOTAL){job=setTimeout(generateChunk,0);return;}
+ log("Generated all 50,000 synthetic ticks locally. Running TEST 203 replay.");
+ job=null;
+ replay();
+}
+function analyzeAt(p,i){
+ const recent=[];
+ for(let j=i-SIGNAL_WINDOW+1;j<=i;j++)recent.push(p[j]-p[j-1]);
+ const baseline=[];
+ const start=i-(SIGNAL_WINDOW+BASELINE_WINDOW-1),end=i-SIGNAL_WINDOW;
+ for(let j=start;j<=end;j++)baseline.push(Math.abs(p[j]-p[j-1]));
+ const up=recent.filter(v=>v>0).length,down=recent.filter(v=>v<0).length;
+ const net=recent.reduce((a,b)=>a+b,0),path=recent.reduce((a,b)=>a+Math.abs(b),0);
+ const efficiency=path>0?Math.abs(net)/path:0,recentVol=path/SIGNAL_WINDOW;
+ const baselineVol=baseline.length?baseline.reduce((a,b)=>a+b,0)/baseline.length:0;
+ const volRatio=baselineVol>0?recentVol/baselineVol:0,dirMoves=Math.max(up,down);
+ const volOkay=volRatio>=MIN_VOL_RATIO&&volRatio<=MAX_VOL_RATIO;
+ const direction=net>0?"CALL":net<0?"PUT":null;
+ return {confirmed:!!direction&&dirMoves>=MIN_DIRECTIONAL_MOVES&&efficiency>=MIN_EFFICIENCY&&volOkay,direction};
+}
+function replay(){
+ let signals=0,trades=0,wins=0,losses=0,ties=0,profit=0,peak=0,maxDD=0,streak=0,longest=0;
+ let i=SIGNAL_WINDOW+BASELINE_WINDOW;
+ while(i+EXPIRY<ticks.length){
+  const a=analyzeAt(ticks,i);
+  if(!a.confirmed){i++;continue;}
+  signals++;trades++;
+  const exit=ticks[i+EXPIRY],entry=ticks[i];
+  if((a.direction==="CALL"&&exit>entry)||(a.direction==="PUT"&&exit<entry)){
+   wins++;profit=Number((profit+WIN).toFixed(4));streak=0;
+  }else if(exit===entry){ties++;streak=0;}
+  else{losses++;profit=Number((profit+LOSS).toFixed(4));streak++;longest=Math.max(longest,streak);}
+  peak=Math.max(peak,profit);maxDD=Math.max(maxDD,peak-profit);
+  i+=EXPIRY+1;
+ }
+ const decisive=wins+losses,rate=decisive?wins/decisive*100:0;
+ $("signals").textContent=String(signals);$("trades").textContent=String(trades);
+ $("wins").textContent=String(wins);$("losses").textContent=String(losses);$("ties").textContent=String(ties);
+ $("winrate").textContent=decisive?rate.toFixed(1)+"%":"N/A";
+ $("profit").textContent=money(profit);$("profit").className="stat "+(profit>=0?"green":"red");
+ $("drawdown").textContent="-$"+maxDD.toFixed(2);$("streak").textContent=String(longest);
+ $("tickCount").textContent=ticks.length.toLocaleString();
+ $("verdict").textContent="COMPLETED — SOFTWARE CHECK ONLY";$("verdict").className="stat green";
+ $("note").textContent="Completed on synthetic random ticks only. The win rate and P/L are properties of this artificial sample, not evidence of an edge on Deriv R_10. This result does NOT clear TEST 203 for live DEMO or real trading.";
+ log("Offline replay complete · "+trades+" simulated trades · "+wins+" wins / "+losses+" losses / "+ties+" ties · "+rate.toFixed(1)+"% win rate · "+money(profit)+" estimated P/L · max drawdown -$"+maxDD.toFixed(2)+" · longest losing streak "+longest+".");
+ finishRun("Completed. This was synthetic data only; no Deriv connection or trades were used.");
+}
+function run(){
+ if(busy)return;
+ clearResults();ticks=[];seed=2032026;setProgress(0);startedAt=Date.now();busy=true;
+ $("run").disabled=true;$("status").textContent="Generating 50,000 synthetic ticks locally…";
+ $("log").textContent="Starting offline TEST 203. No internet or Deriv connection.";
+ $("elapsedResult").textContent="Running…";
+ clock=setInterval(showTimer,100);hardStop=setTimeout(timeoutRun,30000);
+ log("Target runtime: under 10 seconds. Hard stop: 30 seconds.");
+ generateChunk();
+}
+$("run").addEventListener("click",run);
+$("clear").addEventListener("click",function(){
+ if(busy){log("Clear ignored while a run is active.");return;}
+ clearResults();ticks=[];setProgress(0);$("timer").textContent="00:00.0 / 00:30.0";
+ $("status").textContent="Results cleared. This page does not touch TEST 201B or live TEST 203.";
+ $("log").textContent="Offline TEST 203 ready. No saved live-test data was changed.";
+});
+showTimer();
+})();
+</script>
+</body>
+</html>
