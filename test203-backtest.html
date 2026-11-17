@@ -68,10 +68,11 @@ button{padding:14px;border:0;border-radius:11px;font-weight:750;font-size:15px;c
 "use strict";
 const $=id=>document.getElementById(id);
 const SYMBOL="R_10",BATCH=5000,MAX_BATCHES=10,TARGET=1000,EXPIRY=5,STAKE=0.35,WIN=0.2625,LOSS=-0.35;
-let socket=null,busy=false,timer=null,prices=[],times=[],batchCount=0,requestEnd="latest",lastOldest=null;
+let socket=null,busy=false,timer=null,retryTimer=null,prices=[],times=[],batchCount=0,requestEnd="latest",lastOldest=null,appId="",hostIndex=0,attemptNo=0,activeSocketUrl="";
+const WS_HOSTS=["ws.derivws.com","ws.binaryws.com"],MAX_CONNECT_ATTEMPTS=3;
 function log(s){$("log").textContent+="\n"+new Date().toLocaleTimeString()+"  "+s;$("log").scrollTop=$("log").scrollHeight;}
 function money(n){return (n>=0?"+$":"-$")+Math.abs(n).toFixed(2);}
-function finish(){if(timer){clearTimeout(timer);timer=null;}if(socket){try{socket.close();}catch(e){}socket=null;}busy=false;$("run").disabled=false;}
+function finish(){if(timer){clearTimeout(timer);timer=null;}if(retryTimer){clearTimeout(retryTimer);retryTimer=null;}const s=socket;socket=null;busy=false;if(s){try{s.close();}catch(e){}}$("run").disabled=false;}
 function clearResults(){["signals","trades","wins","losses","ties","winrate","profit","drawdown","streak","tickCount","batches"].forEach(id=>$(id).textContent="--");$("verdict").textContent="NOT RUN";$("range").textContent="Historical time range: --";$("note").textContent="A pass requires 1,000 simulated trades, at least 58% win rate, and positive estimated P/L. Passing is not a guarantee of future profitability.";}
 function analyzeAt(p,i){
  const recent=[];for(let j=i-7;j<=i;j++)recent.push(p[j]-p[j-1]);
@@ -118,23 +119,44 @@ function replay(){
 }
 function requestBatch(end){
  requestEnd=end;
- if(!socket||socket.readyState!==1){$("status").textContent="Connection closed while downloading history.";log("Cannot request next history batch: WebSocket is not open.");finish();return;}
- socket.send(JSON.stringify({ticks_history:SYMBOL,count:BATCH,end:end,style:"ticks"}));
+ if(!socket||socket.readyState!==1){log("History request queued while socket reconnects · "+activeSocketUrl);return;}
+ try{socket.send(JSON.stringify({ticks_history:SYMBOL,count:BATCH,end:end,style:"ticks"}));}
+ catch(e){log("Send failed · "+e.name+": "+e.message);}
 }
-$("run").addEventListener("click",function(){
- if(busy)return;
- const appid=$("appid").value.trim();
- if(!/^\d+$/.test(appid)){alert("Enter the numeric Deriv App ID only. Do not enter your PAT.");return;}
- clearResults();prices=[];times=[];batchCount=0;lastOldest=null;busy=true;$("run").disabled=true;
- $("status").textContent="Connecting to public historical market data…";
- log("Starting historical download: up to "+(BATCH*MAX_BATCHES).toLocaleString()+" R_10 ticks. No PAT, no account authorization, no trade requests.");
+function retryOrFallback(closeInfo){
+ if(!busy)return;
+ if(attemptNo<MAX_CONNECT_ATTEMPTS){
+  const wait=800*attemptNo;
+  log("Retrying "+WS_HOSTS[hostIndex]+" in "+wait+" ms · attempt "+(attemptNo+1)+"/"+MAX_CONNECT_ATTEMPTS+".");
+  retryTimer=setTimeout(function(){retryTimer=null;connectSocket();},wait);
+  return;
+ }
+ if(hostIndex<WS_HOSTS.length-1){
+  hostIndex++;attemptNo=0;
+  log("Primary endpoint attempts exhausted. Trying fallback host "+WS_HOSTS[hostIndex]+".");
+  retryTimer=setTimeout(function(){retryTimer=null;connectSocket();},500);
+  return;
+ }
+ $("status").textContent="Could not connect to Deriv history. See diagnostic log; no trades were placed.";
+ log("All connection attempts failed. Last close: code "+closeInfo.code+", reason "+(closeInfo.reason||"(empty)")+". Browser cannot reveal the server/network's underlying cause from WebSocket error events.");
+ finish();
+}
+function connectSocket(){
+ if(!busy)return;
+ const host=WS_HOSTS[hostIndex];attemptNo++;
+ const url="wss://"+host+"/websockets/v3?app_id="+encodeURIComponent(appId);
+ activeSocketUrl=url;
+ log("Connecting · "+url+" · attempt "+attemptNo+"/"+MAX_CONNECT_ATTEMPTS+" · browser online="+(navigator.onLine?"yes":"no"));
  try{
-  socket=new WebSocket("wss://ws.derivws.com/websockets/v3?app_id="+encodeURIComponent(appid));
-  timer=setTimeout(function(){if(busy){$("status").textContent="History download timed out. See Activity log.";log("90-second timeout · batches received="+batchCount+" · ticks="+prices.length);finish();}},90000);
-  socket.onopen=function(){log("Public market-data WebSocket opened. Requesting latest history.");requestBatch("latest");};
-  socket.onmessage=function(ev){
-   if(!busy)return;let d;try{d=JSON.parse(ev.data);}catch(e){log("Ignored invalid JSON response.");return;}
-   if(d.error){$("status").textContent="Deriv history error: "+d.error.message;log("API error "+(d.error.code||"") +": "+d.error.message);finish();return;}
+  const s=new WebSocket(url);socket=s;const started=Date.now();
+  s.onopen=function(){
+   if(socket!==s||!busy)return;
+   log("WebSocket OPEN · host="+host+" · protocol="+(s.protocol||"(none)")+" · readyState="+s.readyState+". Requesting history.");
+   requestBatch(requestEnd);
+  };
+  s.onmessage=function(ev){
+   if(socket!==s||!busy)return;let d;try{d=JSON.parse(ev.data);}catch(e){log("Ignored invalid JSON response.");return;}
+   if(d.error){$("status").textContent="Deriv history error: "+d.error.message;log("API error "+(d.error.code||"")+": "+d.error.message);finish();return;}
    if(d.msg_type!=="history"||!d.history)return;
    const pp=(d.history.prices||[]).map(Number),tt=(d.history.times||[]).map(Number);
    if(!pp.length||pp.length!==tt.length||pp.some(x=>!Number.isFinite(x))){$("status").textContent="Invalid or empty history batch.";log("Invalid batch received; stopping.");finish();return;}
@@ -152,9 +174,32 @@ $("run").addEventListener("click",function(){
     replay();$("status").textContent="Backtest finished. No live or demo contracts were placed.";finish();
    }
   };
-  socket.onerror=function(){if(!busy)return;$("status").textContent="WebSocket error while fetching public history.";log("WebSocket error · batch "+batchCount+" · browser does not expose the underlying cause.");};
-  socket.onclose=function(e){if(busy){$("status").textContent="History connection closed before replay completed.";log("Socket closed · code "+e.code+" · reason "+(e.reason||"(empty)")+" · ticks downloaded "+prices.length);finish();}};
- }catch(e){$("status").textContent="Could not start history request: "+e.message;log("Request error: "+e.message);finish();}
+  s.onerror=function(ev){
+   if(socket!==s||!busy)return;
+   $("status").textContent="WebSocket error · reconnecting if possible.";
+   log("WebSocket ERROR event · host="+host+" · readyState="+s.readyState+" · online="+(navigator.onLine?"yes":"no")+" · eventType="+(ev&&ev.type||"error")+". Browser security APIs do not expose a more specific network/server error.");
+  };
+  s.onclose=function(e){
+   if(socket!==s||!busy)return;
+   socket=null;
+   const info={code:e.code,reason:e.reason||""};
+   log("Socket CLOSED · host="+host+" · code="+e.code+" · reason="+(e.reason||"(empty)")+" · clean="+e.wasClean+" · open duration="+((Date.now()-started)/1000).toFixed(1)+"s · batch="+batchCount+" · ticks="+prices.length+".");
+   retryOrFallback(info);
+  };
+ }catch(e){
+  log("WebSocket constructor failed · host="+host+" · "+e.name+": "+e.message);
+  retryOrFallback({code:"constructor",reason:e.message});
+ }
+}
+$("run").addEventListener("click",function(){
+ if(busy)return;
+ appId=$("appid").value.trim();
+ if(!/^\\d+$/.test(appId)){alert("Enter the numeric Deriv App ID only. Do not enter your PAT.");return;}
+ clearResults();prices=[];times=[];batchCount=0;lastOldest=null;requestEnd="latest";hostIndex=0;attemptNo=0;busy=true;socket=null;
+ $("run").disabled=true;$("status").textContent="Connecting to public historical market data…";
+ log("Starting history download: up to "+(BATCH*MAX_BATCHES).toLocaleString()+" R_10 ticks. No PAT, no account authorization, no trade requests.");
+ timer=setTimeout(function(){if(busy){$("status").textContent="History download timed out. See diagnostic log.";log("120-second overall timeout · host="+WS_HOSTS[hostIndex]+" · attempts="+attemptNo+" · batches="+batchCount+" · ticks="+prices.length);finish();}},120000);
+ connectSocket();
 });
 $("clear").addEventListener("click",function(){if(busy){alert("Wait for the current download to finish.");return;}clearResults();$("status").textContent="Results cleared. TEST 201B and TEST 203 live data are untouched."; $("log").textContent="Backtest results cleared. No saved live-test data was changed.";});
 })();
