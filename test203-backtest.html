@@ -138,11 +138,10 @@ $("run").addEventListener("click",function(){
    if(d.msg_type!=="history"||!d.history)return;
    const pp=(d.history.prices||[]).map(Number),tt=(d.history.times||[]).map(Number);
    if(!pp.length||pp.length!==tt.length||pp.some(x=>!Number.isFinite(x))){$("status").textContent="Invalid or empty history batch.";log("Invalid batch received; stopping.");finish();return;}
-   let newCount=0;
-   for(let k=0;k<pp.length;k++){
-    if(times.length===0||tt[k]>times[times.length-1]){prices.push(pp[k]);times.push(tt[k]);newCount++;}
-   }
-   batchCount++;log("History batch "+batchCount+"/"+MAX_BATCHES+" · "+newCount+" new ticks · "+prices.length+" total.");
+   const newCount=pp.length;
+   if(batchCount===0){prices=pp.slice();times=tt.slice();}
+   else{prices=pp.concat(prices);times=tt.concat(times);}
+   batchCount++;log("History batch "+batchCount+"/"+MAX_BATCHES+" · "+newCount+" older ticks added · "+prices.length+" total.");
    const oldest=tt[0];
    if(batchCount<MAX_BATCHES&&pp.length===BATCH&&Number.isFinite(oldest)&&oldest>0&&oldest!==lastOldest&&prices.length<100000){
     lastOldest=oldest;$("status").textContent="Downloaded "+prices.length+" ticks. Fetching older history (batch "+(batchCount+1)+"/"+MAX_BATCHES+")…";
